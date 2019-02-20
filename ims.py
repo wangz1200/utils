@@ -625,11 +625,22 @@ class ImportUser(object):
 
         self.sql = Insert(db).table("user")
 
-    def do_update(self):
-        self.sql = self.sql.do_update()
-
-    def from_txt(self, file):
-        pass
+    def from_excel(self, file, sheet=None):
+        wb = xl.load_workbook(file)
+        ws = wb.active if sheet is None else wb[sheet]
+        content = []
+        for row in ws.iter_rows(min_row=2):
+            content.append(
+                {
+                    "user": row[0].value,
+                    "password": row[1].value,
+                    "name": row[2].value,
+                    "dept": row[3].value,
+                    "state": row[4].value,
+                }
+            )
+        wb.close()
+        return self.sql.exec(*content)
 
 
 class ImportCustomer(object):
@@ -637,10 +648,40 @@ class ImportCustomer(object):
     def __init__(self, db):
         super(ImportCustomer, self).__init__()
 
-        self.db = db
+        self.sql = Insert(db).table("customer")
 
-    def from_txt(self, file):
-        pass
+    def from_excel(self, file, sheet=None):
+        wb = xl.load_workbook(file)
+        ws = wb.active if sheet is None else wb[sheet]
+        content = []
+        for row in ws.iter_rows(min_row=2):
+            content.append(
+                {
+                    "customer": row[4].value[-11:],
+                    "name": row[5].value,
+                    "type": row[9].value,
+                    "open_date": row[10].value,
+                }
+            )
+        wb.close()
+        return self.sql.exec(*content)
+
+    def from_txt(self, file, delimiter=","):
+        content = []
+        with open(file, encoding="utf8") as f:
+            lines = f.readlines()
+            if len(lines) <= 1:
+                return
+            for line in lines[1:]:
+                row = line.split(delimiter)
+                content.append({
+                    "customer": row[4].replace(" ", "")[-11:],
+                    "name": row[5].replace(" ", ""),
+                    "type": row[9].replace(" ", ""),
+                    "open_date": row[10].replace(" ", ""),
+                })
+
+        return self.sql.exec(*content)
 
 
 class ImportDepositAccount(object):
@@ -648,10 +689,40 @@ class ImportDepositAccount(object):
     def __init__(self, db):
         super(ImportDepositAccount, self).__init__()
 
-        self.db = db
+        self.sql = Insert(db).table("deposit_account")
 
-    def from_txt(self, file):
-        pass
+    def from_excel(self, file, sheet=None):
+        wb = xl.load_workbook(file)
+        ws = wb.active if sheet is None else wb[sheet]
+        content = []
+        for row in ws.iter_rows(min_row=2):
+            content.append(
+                {
+                    "account": row[3].value,
+                    "customer": row[0].value[-11:],
+                    "inst": row[1].value,
+                    "product": row[7].value,
+                    "open_date": row[9].value,
+                }
+            )
+        wb.close()
+        return self.sql.exec(*content)
+
+    def from_txt(self, file, delimiter=","):
+        content = []
+        with open(file, encoding="utf8") as f:
+            lines = f.readlines()
+            for line in lines[1:]:
+                row = line.split(delimiter)
+                content.append({
+                    "account": row[3].replace(" ", ""),
+                    "customer": row[0].replace(" ", "")[-11:],
+                    "inst": row[1].replace(" ", ""),
+                    "product": row[7].replace(" ", ""),
+                    "open_date": row[9].replace(" ", ""),
+                })
+
+        return self.sql.exec(*content)
 
 
 class ImportDepositData(object):
@@ -659,10 +730,44 @@ class ImportDepositData(object):
     def __init__(self, db):
         super(ImportDepositData, self).__init__()
 
-        self.db = db
+        self.sql = Insert(db).table("deposit_data")
 
-    def from_txt(self, file):
-        pass
+    def from_excel(self, file, sheet=None):
+        wb = xl.load_workbook(file)
+        ws = wb.active if sheet is None else wb[sheet]
+        content = []
+        for row in ws.iter_rows(min_row=2):
+            content.append(
+                {
+                    "account": row[3].value,
+                    "state": row[11].value,
+                    "balance": row[13].value,
+                    "month_acc": row[14].value,
+                    "season_acc": row[15].value,
+                    "year_acc": row[16].value,
+                    "date": row[17].value,
+                }
+            )
+        wb.close()
+        return self.sql.exec(*content)
+
+    def from_txt(self, file, delimiter=","):
+        content = []
+        with open(file, encoding="utf8") as f:
+            lines = f.readlines()
+            for line in lines[1:]:
+                row = line.split(delimiter)
+                content.append({
+                    "account": row[3].replace(" ", ""),
+                    "state": row[11].replace(" ", ""),
+                    "balance": row[13].replace(" ", ""),
+                    "month_acc": row[14].replace(" ", ""),
+                    "season_acc": row[15].replace(" ", ""),
+                    "year_acc": row[16].replace(" ", ""),
+                    "date": row[17].replace(" ", ""),
+                })
+
+        return self.sql.exec(*content)
 
 
 class ImportDepositOwner(object):
@@ -670,10 +775,21 @@ class ImportDepositOwner(object):
     def __init__(self, db):
         super(ImportDepositOwner, self).__init__()
 
-        self.db = db
+        self.sql = Insert(db).table("deposit_owner")
 
-    def from_txt(self, file):
-        pass
+    def from_excel(self, file, sheet=None):
+        wb = xl.load_workbook(file)
+        ws = wb.active if sheet is None else wb[sheet]
+        content = []
+        for row in ws.iter_rows(min_row=2):
+            content.append(
+                {
+                    "customer": row[0].value[-11:],
+                    "user": row[1].value,
+                }
+            )
+        wb.close()
+        return self.sql.exec(*content)
 
 
 if __name__ == "__main__":
