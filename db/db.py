@@ -10,9 +10,10 @@ class DB(object):
 
     def __init__(
             self,
-            host="127.0.0.1", port=5432, name="ims",
+            host="127.0.0.1", port=5432, name="db",
             user="postgres", password="postgres",
             pool_size=8, recycle=3600, encoding="utf8"):
+        
         super(DB, self).__init__()
 
         url = "postgresql://{user}:{password}@{host}:{port}/{name}".format(

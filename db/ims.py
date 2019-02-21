@@ -182,6 +182,98 @@ def register_deposit_owner_table(db, name="deposit_owner"):
     )
 
 
+class SelectDeposit(object):
+
+    def __init__(self, db, date, scale=10000, precision=2):
+        super(SelectDeposit, self).__init__()
+
+        self.db = db
+
+        self.user = db.table("user")
+        self.customer = db.table("customer")
+        self.account = db.table("deposit_account")
+        self.owner = db.table("deposit_owner")
+
+        data = db.table("deposit_data")
+        self.data = sa.select([data, ]).where(data.c.date == date).alias("data")
+
+        self.source = self.data.join(self.account, self.data.c.account == self.account.c.account). \
+            join(self.customer, self.customer.c.customer == self.account.c.customer). \
+            outerjoin(self.owner, self.owner.c.customer == self.customer.c.customer). \
+            outerjoin(self.user, self.user.c.user == self.owner.c.user)
+
+        m, s, y = days(date)
+        self.balance = sa.func.round(sa.func.sum(self.data.c.balance) / scale, precision)
+        self.month_avg = sa.func.round(sa.func.sum(self.data.c.month_acc) / scale / m, precision)
+        self.season_avg = sa.func.round(sa.func.sum(self.data.c.season_acc) / scale / s, precision)
+        self.year_avg = sa.func.round(sa.func.sum(self.data.c.year_acc) / scale / y, precision)
+
+        self.sql = None
+
+    def where(self, clause):
+        self.sql = self.sql.where(clause)
+        return self
+
+    def product(self, type_, *args):
+        if type_ == DEMAND:
+            self.where(sa.text(self.account.c.product.name + " ~ '%s'" % "^(?!113)"))
+
+        elif type_ == FIX:
+            where = "^113"
+            if len(args) > 0:
+                p = [FIXES[k] for k in args]
+                if len(p) > 0:
+                    where = where + "\\d{3}(%s)$" % "|".join(p)
+            self.where(sa.text(self.account.c.product.name + " ~ '%s'" % where))
+
+        return self
+
+    def exec(self):
+        return self.db.query(self.sql)
+
+
+class SelectDepositByUser(SelectDeposit):
+
+    def __init__(self, db, date):
+        super(SelectDepositByUser, self).__init__(db, date)
+
+        self.sql = sa.select([
+            self.user.c.user.label("user"),
+            self.user.c.name.label("name"),
+            self.user.c.dept.label("dept"),
+            self.user.c.state.label("state"),
+            self.balance.label("balance"),
+            self.month_avg.label("month_avg"),
+            self.season_avg.label("season_avg"),
+            self.year_avg.label("year_avg"),
+        ]). \
+            select_from(self.source). \
+            group_by(self.user.c.user)
+
+
+class SelectDepositByCustomer(SelectDeposit):
+
+    def __init__(self, db, date):
+        super(SelectDepositByCustomer, self).__init__(db, date)
+
+        self.sql = sa.select([
+            self.customer.c.customer.label("customer"),
+            self.customer.c.name.label("name"),
+            self.customer.c.type.label("type"),
+            self.customer.c.open_date.label("open_date"),
+            self.balance.label("balance"),
+            self.month_avg.label("month_avg"),
+            self.season_avg.label("season_avg"),
+            self.year_avg.label("year_avg"),
+            self.user.c.user.label("user"),
+            self.user.c.name.label("user_name"),
+            self.user.c.dept.label("dept"),
+            self.user.c.state.label("state"),
+        ]). \
+            select_from(self.source). \
+            group_by(self.customer.c.customer, self.user.c.user)
+
+
 class MetaDeposit(object):
 
     def __init__(self, db, date, scale=10000, precision=2):
@@ -295,10 +387,10 @@ class ExportDeposit(object):
         self.sql = None
 
 
-class ExportDepositByUser(object):
+class ExportUserDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDepositByUser, self).__init__()
+        super(ExportUserDeposit, self).__init__()
 
         self.meta = meta
         self.sql = self.meta.select_by_user()
@@ -383,10 +475,10 @@ class ExportDepositByUser(object):
         wb.save(file)
 
 
-class ExportDepositByCustomer(object):
+class ExportCustomerDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDepositByCustomer, self).__init__()
+        super(ExportCustomerDeposit, self).__init__()
 
         self.meta = meta
         self.sql = self.meta.select_by_customer()
@@ -476,10 +568,10 @@ class ExportDepositByCustomer(object):
         wb.save(file)
 
 
-class ExportDepositByAccount(object):
+class ExportAccountDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDepositByAccount, self).__init__()
+        super(ExportAccountDeposit, self).__init__()
 
         self.meta = meta
         self.sql = self.meta.select_by_account()
@@ -530,10 +622,10 @@ class ExportDepositByAccount(object):
         wb.save(file)
 
 
-class ExportDepositByInst(object):
+class ExportInstDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDepositByInst, self).__init__()
+        super(ExportInstDeposit, self).__init__()
 
         self.meta = meta
         self.sql = self.meta.select_by_inst()
@@ -825,8 +917,8 @@ def import_all(db, dir_):
             im.from_txt(os.path.join(dir_, f))
 
 
-def init():
-    db = DB(host="173.13.88.1", port=5555)
+def init(**kw):
+    db = DB(**kw)
 
     register_user_table(db)
     register_customer_table(db)
