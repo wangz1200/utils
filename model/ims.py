@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import Insert as sa_insert
 import openpyxl as xl
 
 from model.db import DB
+import config
 
 
 __day1__ = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,)
@@ -182,6 +183,9 @@ class SelectDeposit(object):
         self.month_avg = sa.func.round(sa.func.sum(self.data.c.month_acc) / scale / m, precision)
         self.season_avg = sa.func.round(sa.func.sum(self.data.c.season_acc) / scale / s, precision)
         self.year_avg = sa.func.round(sa.func.sum(self.data.c.year_acc) / scale / y, precision)
+
+    def exec(self, sql):
+        return self.db.query(sql)
         
     def product(self, type_, *args):
         if type_ == DEMAND:
@@ -335,8 +339,8 @@ class ExportUserDeposit(object):
 
         return self._combine(demand, fix)
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/user.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "user.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
@@ -428,8 +432,8 @@ class ExportCustomerDeposit(object):
 
         return self._combine(demand, fix)
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/customer.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "customer.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
@@ -482,8 +486,8 @@ class ExportAccountDeposit(object):
 
         return res
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/account.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "account.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
@@ -570,8 +574,8 @@ class ExportInstDeposit(object):
 
         return self._combine(demand, fix)
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/inst.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "inst.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
