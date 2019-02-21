@@ -3,10 +3,10 @@
 import os
 from collections import OrderedDict
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import Insert as insert
+from sqlalchemy.dialects.postgresql import Insert as sa_insert
 import openpyxl as xl
 
-from db.db import DB
+from model.db import DB
 
 
 __day1__ = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,)
@@ -61,31 +61,6 @@ def days(date):
     return m, s, y
 
 
-class Select(object):
-
-    def __init__(self, db):
-        super(Select, self).__init__()
-
-        self.db = db
-        self.sql = None
-
-    def fields(self, *fields):
-        self.sql = sa.select(fields)
-        return self
-
-    def select_from(self, from_):
-        self.sql = self.sql.select_from(from_)
-        return self
-
-    def where(self, clause):
-        self.sql = self.sql.where(clause)
-        return self
-
-    def group_by(self, *fields):
-        self.sql = self.sql.group_by(*fields)
-        return self
-
-
 class Insert(object):
 
     def __init__(self, db):
@@ -97,7 +72,7 @@ class Insert(object):
 
     def table(self, table):
         self.t = self.db.table(table) if isinstance(table, str) else table
-        self.sql = insert(self.t)
+        self.sql = sa_insert(self.t)
         return self
 
     def do_update(self):
