@@ -1,16 +1,109 @@
-# -*- coding: utf-8 -*-
+# -*- coding:utf-8 -*-
 
 import os
 from collections import OrderedDict
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import Insert as insert
+from sqlalchemy.dialects.postgresql import Insert as sa_insert
 import openpyxl as xl
+from db import DB
+import config
 
-from db.db import DB
+
+USER_COLUMNS = (
+    sa.Column("user", sa.VARCHAR(32)),
+    sa.Column("password", sa.VARCHAR(256)),
+    sa.Column("name", sa.VARCHAR(32)),
+    sa.Column("dept", sa.VARCHAR(32)),
+    sa.Column("state", sa.VARCHAR(32)),
+    sa.PrimaryKeyConstraint("user"),
+)
+CUSTOMER_COLUMNS = (
+    sa.Column("customer", sa.VARCHAR(32)),
+    sa.Column("name", sa.VARCHAR(128)),
+    sa.Column("type", sa.VARCHAR(32)),
+    sa.Column("open_date", sa.DATE),
+    sa.PrimaryKeyConstraint("customer"),
+)
+DEPOSIT_ACCOUNT_COLUMNS = (
+    sa.Column("account", sa.VARCHAR(32)),
+    sa.Column("customer", sa.VARCHAR(32), ),
+    sa.Column("inst", sa.VARCHAR(32)),
+    sa.Column("product", sa.VARCHAR(32)),
+    sa.Column("open_date", sa.DATE),
+    sa.PrimaryKeyConstraint("account"),
+    sa.ForeignKeyConstraint(("customer",), ["customer.customer", ]),
+)
+DEPOSIT_DATA_COLUMNS = (
+    sa.Column("account", sa.VARCHAR(32)),
+    sa.Column("state", sa.VARCHAR(32)),
+    sa.Column("balance", sa.NUMERIC(32, 2, asdecimal=False)),
+    sa.Column("month_acc", sa.NUMERIC(32, 2, asdecimal=False)),
+    sa.Column("season_acc", sa.NUMERIC(32, 2, asdecimal=False)),
+    sa.Column("year_acc", sa.NUMERIC(32, 2, asdecimal=False)),
+    sa.Column("date", sa.DATE),
+    sa.ForeignKeyConstraint(("account",), ["deposit_account.account", ]),
+)
+DEPOSIT_OWNER_COLUMNS = (
+    sa.Column("customer", sa.VARCHAR(32)),
+    sa.Column("user", sa.VARCHAR(32)),
+    sa.PrimaryKeyConstraint("customer"),
+    sa.ForeignKeyConstraint(("user",), ["user.user", ]),
+    sa.ForeignKeyConstraint(("customer",), ["customer.customer", ]),
+)
 
 
-__day1__ = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,)
-__day2__ = (31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,)
+db = DB(
+    host=config.IMS_DB_HOST,
+    port=config.IMS_DB_PORT,
+    user=config.IMS_DB_USER,
+    password=config.IMS_DB_PASSWORD,
+    name=config.IMS_DB_NAME,
+)
+
+if db.ping() is False:
+    pass
+
+
+db.table.register("user", *USER_COLUMNS)
+db.table.register("customer", *CUSTOMER_COLUMNS)
+db.table.register("deposit_account", *DEPOSIT_ACCOUNT_COLUMNS)
+db.table.register("deposit_data", *DEPOSIT_DATA_COLUMNS)
+db.table.register("deposit_owner", *DEPOSIT_OWNER_COLUMNS)
+db.table.create_all()
+
+
+DAYS1 = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,)
+DAYS2 = (31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,)
+
+
+def days(date):
+    if len(date) != 8 or isinstance(date, str) is not True:
+        return -1, -1, -1
+
+    year = int(date[0:4])
+    month = int(date[4:6])
+    day = int(date[6:])
+
+    days_ = DAYS2 if year % 4 == 0 else DAYS1
+
+    m = day
+    s = 0
+    y = 0
+
+    cur = 1
+    while cur < month:
+        y += days_[cur]
+        cur = cur + 1
+    y += day
+
+    cur = month - (month - 1) % 3
+    while cur < month:
+        s += days_[cur]
+        cur = cur + 1
+    s += day
+
+    return m, s, y
+
 
 DEMAND = 1
 FIX = 2
@@ -32,162 +125,10 @@ SUM_SEASON_AVG = "sum_season_avg"
 SUM_YEAR_AVG = "sum_year_avg"
 
 
-class Select(object):
-
-    def __init__(self, db):
-        super(Select, self).__init__()
-
-        self.db = db
-        self.sql = None
-
-    def fields(self, *fields):
-        self.sql = sa.select(fields)
-        return self
-
-    def select_from(self, from_):
-        self.sql = self.sql.select_from(from_)
-        return self
-
-    def where(self, clause):
-        self.sql = self.sql.where(clause)
-        return self
-
-    def group_by(self, *fields):
-        self.sql = self.sql.group_by(*fields)
-        return self
-
-
-class Insert(object):
-
-    def __init__(self, db):
-        super(Insert, self).__init__()
-
-        self.db = db
-        self.t = None
-        self.sql = None
-
-    def table(self, table):
-        self.t = self.db.table(table) if isinstance(table, str) else table
-        self.sql = insert(self.t)
-        return self
-
-    def do_update(self):
-        set_ = {}
-        for c in self.t.c:
-            set_[c.name] = getattr(self.sql.excluded, c.name)
-
-        self.sql = self.sql.on_conflict_do_update(
-            index_elements=self.t.primary_key,
-            set_=set_
-        )
-        return self
-
-    def do_nothing(self):
-        self.sql = self.sql.on_conflict_do_nothing(
-            index_elements=self.t.primary_key
-        )
-        return self
-
-    def exec(self, *args, **kw):
-        return self.db.commit(self.sql, *args, **kw)
-
-
-def days(date):
-    if len(date) != 8 or isinstance(date, str) is not True:
-        return -1, -1, -1
-
-    year = int(date[0:4])
-    month = int(date[4:6])
-    day = int(date[6:])
-
-    days_ = __day2__ if year % 4 == 0 else __day1__
-
-    m = day
-    s = 0
-    y = 0
-
-    cur = 1
-    while cur < month:
-        y += days_[cur]
-        cur = cur + 1
-    y += day
-
-    cur = month - (month - 1) % 3
-    while cur < month:
-        s += days_[cur]
-        cur = cur + 1
-    s += day
-
-    return m, s, y
-
-
-def register_user_table(db, name="user"):
-    return db.register_table(
-        name,
-        sa.Column("user", sa.VARCHAR(32)),
-        sa.Column("password", sa.VARCHAR(256)),
-        sa.Column("name", sa.VARCHAR(32)),
-        sa.Column("dept", sa.VARCHAR(32)),
-        sa.Column("state", sa.VARCHAR(32)),
-        sa.PrimaryKeyConstraint("user"),
-    )
-
-
-def register_customer_table(db, name="customer"):
-    return db.register_table(
-        name,
-        sa.Column("customer", sa.VARCHAR(32)),
-        sa.Column("name", sa.VARCHAR(128)),
-        sa.Column("type", sa.VARCHAR(32)),
-        sa.Column("open_date", sa.DATE),
-        sa.PrimaryKeyConstraint("customer"),
-    )
-
-
-def register_deposit_account_table(db, name="deposit_account"):
-    return db.register_table(
-        name,
-        sa.Column("account", sa.VARCHAR(32)),
-        sa.Column("customer", sa.VARCHAR(32), ),
-        sa.Column("inst", sa.VARCHAR(32)),
-        sa.Column("product", sa.VARCHAR(32)),
-        sa.Column("open_date", sa.DATE),
-        sa.PrimaryKeyConstraint("account"),
-        sa.ForeignKeyConstraint(("customer",), ["customer.customer", ]),
-    )
-
-
-def register_deposit_data_table(db, name="deposit_data"):
-    return db.register_table(
-        name,
-        sa.Column("account", sa.VARCHAR(32)),
-        sa.Column("state", sa.VARCHAR(32)),
-        sa.Column("balance", sa.NUMERIC(32, 2, asdecimal=False)),
-        sa.Column("month_acc", sa.NUMERIC(32, 2, asdecimal=False)),
-        sa.Column("season_acc", sa.NUMERIC(32, 2, asdecimal=False)),
-        sa.Column("year_acc", sa.NUMERIC(32, 2, asdecimal=False)),
-        sa.Column("date", sa.DATE),
-        sa.ForeignKeyConstraint(("account",), ["deposit_account.account", ]),
-    )
-
-
-def register_deposit_owner_table(db, name="deposit_owner"):
-    return db.register_table(
-        name,
-        sa.Column("customer", sa.VARCHAR(32)),
-        sa.Column("user", sa.VARCHAR(32)),
-        sa.PrimaryKeyConstraint("customer"),
-        sa.ForeignKeyConstraint(("user",), ["user.user", ]),
-        sa.ForeignKeyConstraint(("customer",), ["customer.customer", ]),
-    )
-
-
 class MetaDeposit(object):
 
-    def __init__(self, db, date, scale=10000, precision=2):
+    def __init__(self, date, scale=10000, precision=2):
         super(MetaDeposit, self).__init__()
-
-        self.db = db
 
         self.user = db.table("user")
         self.customer = db.table("customer")
@@ -208,6 +149,8 @@ class MetaDeposit(object):
         self.season_avg = sa.func.round(sa.func.sum(self.data.c.season_acc) / scale / s, precision)
         self.year_avg = sa.func.round(sa.func.sum(self.data.c.year_acc) / scale / y, precision)
 
+        self.sql = None
+
     def product(self, type_, *args):
         if type_ == DEMAND:
             return sa.text(self.account.c.product.name + " ~ '%s'" % "^(?!113)")
@@ -220,7 +163,7 @@ class MetaDeposit(object):
                     where = where + "\\d{3}(%s)$" % "|".join(p)
             return sa.text(self.account.c.product.name + " ~ '%s'" % where)
 
-    def select_by_user(self):
+    def select_user_deposit(self):
         return sa.select([
             self.user.c.user.label("user"),
             self.user.c.name.label("name"),
@@ -234,7 +177,7 @@ class MetaDeposit(object):
             select_from(self.source). \
             group_by(self.user.c.user)
 
-    def select_by_customer(self):
+    def select_customer_deposit(self):
         return sa.select([
             self.customer.c.customer.label("customer"),
             self.customer.c.name.label("name"),
@@ -252,7 +195,7 @@ class MetaDeposit(object):
             select_from(self.source). \
             group_by(self.customer.c.customer, self.user.c.user)
 
-    def select_by_account(self):
+    def select_account_deposit(self):
         return sa.select([
             self.account.c.account.label("account"),
             self.account.c.inst.label("inst"),
@@ -274,7 +217,7 @@ class MetaDeposit(object):
             select_from(self.source). \
             group_by(self.account.c.account, self.customer.c.customer, self.user.c.user)
 
-    def select_by_inst(self):
+    def select_inst_deposit(self):
         return sa.select([
             self.account.c.inst.label("inst"),
             self.balance.label("balance"),
@@ -286,22 +229,13 @@ class MetaDeposit(object):
             group_by(self.account.c.inst)
 
 
-class ExportDeposit(object):
+class ExportUserDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDeposit, self).__init__()
+        super(ExportUserDeposit, self).__init__()
 
         self.meta = meta
-        self.sql = None
-
-
-class ExportDepositByUser(object):
-
-    def __init__(self, meta):
-        super(ExportDepositByUser, self).__init__()
-
-        self.meta = meta
-        self.sql = self.meta.select_by_user()
+        self.sql = self.meta.select_user_deposit()
 
     @classmethod
     def _row(cls, row):
@@ -362,15 +296,15 @@ class ExportDepositByUser(object):
 
     def result(self):
         sql = self.sql.where(self.meta.product(DEMAND))
-        demand = self.meta.db.query(sql)
+        demand = db.query(sql)
 
         sql = self.sql.where(self.meta.product(FIX))
-        fix = self.meta.db.query(sql)
+        fix = db.query(sql)
 
         return self._combine(demand, fix)
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/user.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "user.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
@@ -383,13 +317,13 @@ class ExportDepositByUser(object):
         wb.save(file)
 
 
-class ExportDepositByCustomer(object):
+class ExportCustomerDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDepositByCustomer, self).__init__()
+        super(ExportCustomerDeposit, self).__init__()
 
         self.meta = meta
-        self.sql = self.meta.select_by_customer()
+        self.sql = self.meta.select_customer_deposit()
 
     @classmethod
     def _row(cls, row):
@@ -455,15 +389,15 @@ class ExportDepositByCustomer(object):
 
     def result(self):
         sql = self.sql.where(self.meta.product(DEMAND))
-        demand = self.meta.db.query(sql)
+        demand = db.query(sql)
 
         sql = self.sql.where(self.meta.product(FIX))
-        fix = self.meta.db.query(sql)
+        fix = db.query(sql)
 
         return self._combine(demand, fix)
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/customer.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "customer.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
@@ -476,18 +410,18 @@ class ExportDepositByCustomer(object):
         wb.save(file)
 
 
-class ExportDepositByAccount(object):
+class ExportAccountDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDepositByAccount, self).__init__()
+        super(ExportAccountDeposit, self).__init__()
 
         self.meta = meta
-        self.sql = self.meta.select_by_account()
+        self.sql = self.meta.select_account_deposit()
 
     def result(self):
         res = {}
 
-        for row in self.meta.db.query(self.sql):
+        for row in db.query(self.sql):
             account = row["account"]
 
             od = OrderedDict()
@@ -516,8 +450,8 @@ class ExportDepositByAccount(object):
 
         return res
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/account.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "account.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
@@ -530,13 +464,13 @@ class ExportDepositByAccount(object):
         wb.save(file)
 
 
-class ExportDepositByInst(object):
+class ExportInstDeposit(object):
 
     def __init__(self, meta):
-        super(ExportDepositByInst, self).__init__()
+        super(ExportInstDeposit, self).__init__()
 
         self.meta = meta
-        self.sql = self.meta.select_by_inst()
+        self.sql = self.meta.select_inst_deposit()
 
     @classmethod
     def _row(cls, row):
@@ -597,15 +531,15 @@ class ExportDepositByInst(object):
 
     def result(self):
         sql = self.sql.where(self.meta.product(DEMAND))
-        demand = self.meta.db.query(sql)
+        demand = db.query(sql)
 
         sql = self.sql.where(self.meta.product(FIX))
-        fix = self.meta.db.query(sql)
+        fix = db.query(sql)
 
         return self._combine(demand, fix)
 
-    def save_to_excel(self, file, sheet=None, template=None):
-        template = template or"./template/deposit/inst.xlsx"
+    def save_to_excel(self, file, sheet=None):
+        template = os.path.join(config.TEMPLATE_DIR, "deposit", "inst.xlsx")
 
         wb = xl.load_workbook(template)
         ws = wb.active
@@ -618,12 +552,41 @@ class ExportDepositByInst(object):
         wb.save(file)
 
 
+class Insert(object):
+
+    def __init__(self, t):
+        super(Insert, self).__init__()
+
+        self.t = t
+        self.sql = sa_insert(self.t)
+
+    def do_update(self):
+        set_ = {}
+        for c in self.t.c:
+            set_[c.name] = getattr(self.sql.excluded, c.name)
+
+        self.sql = self.sql.on_conflict_do_update(
+            index_elements=self.t.primary_key,
+            set_=set_
+        )
+        return self
+
+    def do_nothing(self):
+        self.sql = self.sql.on_conflict_do_nothing(
+            index_elements=self.t.primary_key
+        )
+        return self
+
+    def exec(self, *args, **kw):
+        return db.commit(self.sql, *args, **kw)
+
+
 class ImportUser(object):
 
-    def __init__(self, db):
+    def __init__(self):
         super(ImportUser, self).__init__()
 
-        self.sql = Insert(db).table("user")
+        self.sql = Insert(db.table("user"))
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -645,10 +608,10 @@ class ImportUser(object):
 
 class ImportCustomer(object):
 
-    def __init__(self, db):
+    def __init__(self):
         super(ImportCustomer, self).__init__()
 
-        self.sql = Insert(db).table("customer")
+        self.sql = Insert(db.table("customer"))
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -686,10 +649,10 @@ class ImportCustomer(object):
 
 class ImportDepositAccount(object):
 
-    def __init__(self, db):
+    def __init__(self):
         super(ImportDepositAccount, self).__init__()
 
-        self.sql = Insert(db).table("deposit_account")
+        self.sql = Insert(db.table("deposit_account"))
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -727,10 +690,10 @@ class ImportDepositAccount(object):
 
 class ImportDepositData(object):
 
-    def __init__(self, db):
+    def __init__(self):
         super(ImportDepositData, self).__init__()
 
-        self.sql = Insert(db).table("deposit_data")
+        self.sql = Insert(db.table("deposit_data"))
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -772,10 +735,10 @@ class ImportDepositData(object):
 
 class ImportDepositOwner(object):
 
-    def __init__(self, db):
+    def __init__(self):
         super(ImportDepositOwner, self).__init__()
 
-        self.sql = Insert(db).table("deposit_owner")
+        self.sql = Insert(db.table("deposit_owner"))
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -792,55 +755,40 @@ class ImportDepositOwner(object):
         return self.sql.exec(*content)
 
 
-def export_all_deposit(db, date, dir_):
-    meta = MetaDeposit(db, date)
+def export_all_deposit(date, dir_):
+    meta = MetaDeposit(date)
 
-    ex = ExportDepositByUser(meta)
+    ex = ExportUserDeposit(meta)
     ex.save_to_excel(os.path.join(dir_, "USER-" + date + ".xlsx"))
 
-    ex = ExportDepositByCustomer(meta)
+    ex = ExportCustomerDeposit(meta)
     ex.save_to_excel(os.path.join(dir_, "CUSTOMER-" + date + ".xlsx"))
 
-    ex = ExportDepositByAccount(meta)
+    ex = ExportAccountDeposit(meta)
     ex.save_to_excel(os.path.join(dir_, "ACCOUNT-" + date + ".xlsx"))
 
-    ex = ExportDepositByInst(meta)
-    ex.sql = ex.sql.where(meta.user.c.user == None)
+    ex = ExportInstDeposit(meta)
+    ex.sql = ex.sql.where(ex.meta.user.c.user == None)
     ex.save_to_excel(os.path.join(dir_, "INST-" + date + ".xlsx"))
 
 
-def import_all(db, dir_):
+def import_all(dir_):
     files = os.listdir(dir_)
+
     for f in files:
         if f.startswith("CUS"):
-            im = ImportCustomer(db)
+            im = ImportCustomer()
             im.sql.do_nothing()
             im.from_txt(os.path.join(dir_, f))
         elif f.startswith("DEP"):
-            im = ImportDepositAccount(db)
+            im = ImportDepositAccount()
             im.sql.do_nothing()
             im.from_txt(os.path.join(dir_, f))
 
-            im = ImportDepositData(db)
+            im = ImportDepositData()
             im.from_txt(os.path.join(dir_, f))
 
 
-def init():
-    db = DB(host="173.13.88.1", port=5555)
-
-    register_user_table(db)
-    register_customer_table(db)
-    register_deposit_account_table(db)
-    register_deposit_data_table(db)
-    register_deposit_owner_table(db)
-
-    return db
-
-
 if __name__ == "__main__":
-
-    db = init()
-
-    date = "20190213"
-    export_all_deposit(db, date, "D:/Desktop")
+    export_all_deposit("20181231", "D:/Desktop")
 

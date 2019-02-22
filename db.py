@@ -4,9 +4,30 @@
 import sqlalchemy as sa
 
 
+class Table(object):
+
+    def __init__(self, engine):
+        super(Table, self).__init__()
+        self.metadata = sa.MetaData(bind=engine)
+
+    def __call__(self, name):
+        return self.metadata.tables.get(name, None)
+
+    def register(self, name, *columns):
+        return sa.Table(name, self.metadata, *columns)
+
+    def create(self, name, *columns):
+        t = self.register(name, *columns)
+        t.create(checkfirst=True)
+        return t
+
+    def create_all(self):
+        self.metadata.create_all(checkfirst=True)
+
+
 class DB(object):
 
-    __slots__ = "engine", "metadata"
+    __slots__ = "engine", "table"
 
     def __init__(
             self,
@@ -20,7 +41,11 @@ class DB(object):
             host=host, port=port, name=name, user=user, password=password)
 
         self.engine = sa.create_engine(url, pool_size=pool_size, pool_recycle=recycle, encoding=encoding)
-        self.metadata = sa.MetaData(bind=self.engine)
+        self.table = Table(self.engine)
+
+    @property
+    def t(self):
+        return self.table
 
     def ping(self):
         conn = None
@@ -62,18 +87,4 @@ class DB(object):
             if conn:
                 conn.close()
         return ret
-
-    def table(self, name):
-        return self.metadata.tables.get(name, None)
-
-    def register_table(self, name, *columns):
-        return sa.Table(name, self.metadata, *columns)
-
-    def create_table(self, name, *columns):
-        t = self.register_table(name, *columns)
-        t.create(checkfirst=True)
-        return t
-
-    def create_all_tables(self):
-        self.metadata.create_all(checkfirst=True)
 

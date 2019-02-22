@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import Insert as sa_insert
 import openpyxl as xl
 
-from model.db import DB
+from db import DB
 import config
 
 

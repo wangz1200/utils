@@ -1,22 +1,24 @@
 # -*- coding:utf-8 -*-
 
 import os
+import datetime
 import ims
-from crawler import jmreport
+from crawler import jm
+import config
 
-DIR = "D:/Desktop"
+
+def job():
+    date = (datetime.datetime.now()-datetime.timedelta(days=1)).strftime("%Y%m%d")
+
+    out = os.path.join(config.OUT_DIR, date)
+    os.makedirs(out, exist_ok=True)
+
+    jm.download_all(date, out)
+    ims.import_all(out)
 
 
 if __name__ == "__main__":
-    date = "20190219"
-
-    dir = os.path.join(DIR, date)
-    os.makedirs(dir, exist_ok=True)
-
-    jmreport.download_all(date, dir)
-    db = ims.init()
-    ims.import_all(db, dir)
-    ims.export_all_deposit(db, date, dir)
+    job()
 
 
 
