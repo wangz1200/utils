@@ -105,6 +105,8 @@ def days(date):
     return m, s, y
 
 
+NIL = 0
+NULL = 0
 DEMAND = 1
 FIX = 2
 FIXES = {3: "03", 6: "06", 12: "12", 24: "24", 36: "36", 60: "60", }
@@ -125,31 +127,65 @@ SUM_SEASON_AVG = "sum_season_avg"
 SUM_YEAR_AVG = "sum_year_avg"
 
 
-class MetaDeposit(object):
+class SelectDeposit(object):
 
     def __init__(self, date, scale=10000, precision=2):
-        super(MetaDeposit, self).__init__()
+        super(SelectDeposit, self).__init__()
 
-        self.user = db.table("user")
-        self.customer = db.table("customer")
-        self.account = db.table("deposit_account")
-        self.owner = db.table("deposit_owner")
+        self.set_date(date)
 
+        self.scale = scale
+        self.pre = precision
+
+        self.sql = None
+
+    def set_date(self, date):
+        self.date = date
+        self._m, self._s, self._y = days(date)
+
+    @property
+    def user(self):
+        return db.table("user")
+
+    @property
+    def customer(self):
+        return db.table("customer")
+
+    @property
+    def account(self):
+        return db.table("deposit_account")
+
+    @property
+    def data(self):
         data = db.table("deposit_data")
-        self.data = sa.select([data, ]).where(data.c.date == date).alias("data")
+        return sa.select([data, ]).where(data.c.date == self.date)
 
-        self.source = self.data.join(self.account, self.data.c.account == self.account.c.account). \
+    @property
+    def owner(self):
+        return db.table("deposit_owner")
+
+    @property
+    def source(self):
+        return self.data.join(self.account, self.data.c.account == self.account.c.account). \
             join(self.customer, self.customer.c.customer == self.account.c.customer). \
             outerjoin(self.owner, self.owner.c.customer == self.customer.c.customer). \
             outerjoin(self.user, self.user.c.user == self.owner.c.user)
 
-        m, s, y = days(date)
-        self.balance = sa.func.round(sa.func.sum(self.data.c.balance) / scale, precision)
-        self.month_avg = sa.func.round(sa.func.sum(self.data.c.month_acc) / scale / m, precision)
-        self.season_avg = sa.func.round(sa.func.sum(self.data.c.season_acc) / scale / s, precision)
-        self.year_avg = sa.func.round(sa.func.sum(self.data.c.year_acc) / scale / y, precision)
+    @property
+    def balance(self):
+        return sa.func.round(sa.func.sum(self.data.c.balance) / self.scale, self.pre)
 
-        self.sql = None
+    @property
+    def month_avg(self):
+        return sa.func.round(sa.func.sum(self.data.c.month_acc) / self.scale / self._m, self.pre)
+
+    @property
+    def season_avg(self):
+        return sa.func.round(sa.func.sum(self.data.c.season_acc) / self.scale / self._s, self.pre)
+
+    @property
+    def year_avg(self):
+        return sa.func.round(sa.func.sum(self.data.c.year_acc) / self.scale / self._y, self.pre)
 
     def product(self, type_, *args):
         if type_ == DEMAND:
@@ -163,70 +199,104 @@ class MetaDeposit(object):
                     where = where + "\\d{3}(%s)$" % "|".join(p)
             return sa.text(self.account.c.product.name + " ~ '%s'" % where)
 
-    def select_user_deposit(self):
+        return None
+
+    @property
+    def group_by_user(self):
         return sa.select([
-            self.user.c.user.label("user"),
-            self.user.c.name.label("name"),
-            self.user.c.dept.label("dept"),
-            self.user.c.state.label("state"),
-            self.balance.label("balance"),
-            self.month_avg.label("month_avg"),
-            self.season_avg.label("season_avg"),
-            self.year_avg.label("year_avg"),
+            self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
+            self.balance, self.month_avg, self.season_avg, self.year_avg,
         ]). \
             select_from(self.source). \
             group_by(self.user.c.user)
 
-    def select_customer_deposit(self):
+    @property
+    def group_by_customer(self):
         return sa.select([
-            self.customer.c.customer.label("customer"),
-            self.customer.c.name.label("name"),
-            self.customer.c.type.label("type"),
-            self.customer.c.open_date.label("open_date"),
-            self.balance.label("balance"),
-            self.month_avg.label("month_avg"),
-            self.season_avg.label("season_avg"),
-            self.year_avg.label("year_avg"),
-            self.user.c.user.label("user"),
-            self.user.c.name.label("user_name"),
-            self.user.c.dept.label("dept"),
-            self.user.c.state.label("state"),
+            self.customer.c.customer, self.customer.c.name, self.customer.c.type, self.customer.c.open_date,
+            self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
+            self.balance, self.month_avg, self.season_avg, self.year_avg,
         ]). \
             select_from(self.source). \
             group_by(self.customer.c.customer, self.user.c.user)
 
-    def select_account_deposit(self):
+    @property
+    def group_by_account(self):
         return sa.select([
-            self.account.c.account.label("account"),
-            self.account.c.inst.label("inst"),
-            self.account.c.product.label("product"),
-            self.account.c.open_date.label("open_date"),
-            self.customer.c.customer.label("customer"),
-            self.customer.c.name.label("name"),
-            self.customer.c.type.label("type"),
-            self.customer.c.open_date.label("customer_open_date"),
-            self.balance.label("balance"),
-            self.month_avg.label("month_avg"),
-            self.season_avg.label("season_avg"),
-            self.year_avg.label("year_avg"),
-            self.user.c.user.label("user"),
-            self.user.c.name.label("user_name"),
-            self.user.c.dept.label("dept"),
-            self.user.c.state.label("state"),
+            self.account.c.account, self.account.c.inst, self.account.c.product, self.account.c.open_date,
+            self.customer.c.customer, self.customer.c.name, self.customer.c.type, self.customer.c.open_date,
+            self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
+            self.balance, self.month_avg, self.season_avg, self.year_avg,
         ]). \
             select_from(self.source). \
             group_by(self.account.c.account, self.customer.c.customer, self.user.c.user)
 
-    def select_inst_deposit(self):
+    @property
+    def group_by_inst(self):
         return sa.select([
-            self.account.c.inst.label("inst"),
-            self.balance.label("balance"),
-            self.month_avg.label("month_avg"),
-            self.season_avg.label("season_avg"),
-            self.year_avg.label("year_avg"),
-        ]).\
-            select_from(self.source).\
+            self.account.c.inst,
+            self.balance, self.month_avg, self.season_avg, self.year_avg,
+        ]). \
+            select_from(self.source). \
             group_by(self.account.c.inst)
+
+
+def export_deposit_to_excel(sql, file, title=None, header=None):
+    res = db.query(sql)
+
+    book = xl.Workbook()
+    sheet = book.active
+    if title is not None:
+        sheet.title = title
+
+    if header is not None:
+        sheet.append(header)
+
+    for row in res:
+        sheet.append(list(row.values()))
+
+    book.save(file)
+
+
+def export_user_deposit_to_excel(sql, file, title=None, header=None):
+    header = header or (
+        "用户", "姓名", "部门", "状态", "余额", "月均", "季均", "年均",
+    )
+    export_deposit_to_excel(sql, file, title, header)
+
+
+def export_customer_deposit_to_excel(sql, file, title=None, header=None):
+    pass
+
+
+class Export(object):
+
+    def __init__(self, sql):
+        super(Export, self).__init__()
+
+        self.sql = sql
+
+    @property
+    def rows(self):
+        return db.query(self.sql)
+
+    def save_to_excel(self, file, title=None, template=None):
+        book = xl.Workbook() \
+            if template is None \
+            else xl.load_workbook(template)
+
+        sheet = book.active
+        if title is not None:
+            sheet.title = title
+
+        for row in self.rows:
+            sheet.append(row.values())
+
+        book.save(file)
+
+
+def combine_demand_and_fix(demand, fix):
+    pass
 
 
 class ExportUserDeposit(object):
