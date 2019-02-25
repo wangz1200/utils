@@ -1,7 +1,6 @@
 # -*- coding:utf-8 -*-
 
 import os
-from collections import OrderedDict
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import Insert as sa_insert
 import openpyxl as xl
@@ -111,20 +110,8 @@ DEMAND = 1
 FIX = 2
 FIXES = {3: "03", 6: "06", 12: "12", 24: "24", 36: "36", 60: "60", }
 
-DEMAND_BALANCE = "demand_balance"
-DEMAND_MONTH_AVG = "demand_month_avg"
-DEMAND_SEASON_AVG = "demand_season_avg"
-DEMAND_YEAR_AVG = "demand_year_avg"
-
-FIX_BALANCE = "fix_balance"
-FIX_MONTH_AVG = "fix_month_avg"
-FIX_SEASON_AVG = "fix_season_avg"
-FIX_YEAR_AVG = "fix_year_avg"
-
-SUM_BALANCE = "sum_balance"
-SUM_MONTH_AVG = "sum_month_avg"
-SUM_SEASON_AVG = "sum_season_avg"
-SUM_YEAR_AVG = "sum_year_avg"
+INPUTED = 1
+UNINPUTED = 2
 
 
 class SelectDeposit(object):
@@ -132,64 +119,39 @@ class SelectDeposit(object):
     def __init__(self, date, scale=10000, precision=2):
         super(SelectDeposit, self).__init__()
 
-        self.set_date(date)
-
-        self.scale = scale
-        self.pre = precision
-
-        self.sql = None
-
-    def set_date(self, date):
         self.date = date
-        self._m, self._s, self._y = days(date)
 
-    @property
-    def user(self):
-        return db.table("user")
+        self.user = db.table("user")
+        self.customer = db.table("customer")
+        self.account = db.table("deposit_account")
+        self.owner = db.table("deposit_owner")
 
-    @property
-    def customer(self):
-        return db.table("customer")
-
-    @property
-    def account(self):
-        return db.table("deposit_account")
-
-    @property
-    def data(self):
         data = db.table("deposit_data")
-        return sa.select([data, ]).where(data.c.date == self.date)
+        self.data = sa.select([data, ]).where(data.c.date == date).alias("data")
 
-    @property
-    def owner(self):
-        return db.table("deposit_owner")
-
-    @property
-    def source(self):
-        return self.data.join(self.account, self.data.c.account == self.account.c.account). \
+        self.source = self.data.join(self.account, self.data.c.account == self.account.c.account). \
             join(self.customer, self.customer.c.customer == self.account.c.customer). \
             outerjoin(self.owner, self.owner.c.customer == self.customer.c.customer). \
             outerjoin(self.user, self.user.c.user == self.owner.c.user)
 
-    @property
-    def balance(self):
-        return sa.func.round(sa.func.sum(self.data.c.balance) / self.scale, self.pre)
+        m, s, y = days(date)
+        self.balance = sa.func.round(sa.func.sum(self.data.c.balance) / scale, precision)
+        self.month_avg = sa.func.round(sa.func.sum(self.data.c.month_acc) / scale / m, precision)
+        self.season_avg = sa.func.round(sa.func.sum(self.data.c.season_acc) / scale / s, precision)
+        self.year_avg = sa.func.round(sa.func.sum(self.data.c.year_acc) / scale / y, precision)
 
-    @property
-    def month_avg(self):
-        return sa.func.round(sa.func.sum(self.data.c.month_acc) / self.scale / self._m, self.pre)
+        self.sql = None
 
-    @property
-    def season_avg(self):
-        return sa.func.round(sa.func.sum(self.data.c.season_acc) / self.scale / self._s, self.pre)
+    def where(self, clause):
+        self.sql = self.sql.where(clause)
+        return self
 
-    @property
-    def year_avg(self):
-        return sa.func.round(sa.func.sum(self.data.c.year_acc) / self.scale / self._y, self.pre)
+    def exec(self):
+        return db.query(self.sql)
 
     def product(self, type_, *args):
         if type_ == DEMAND:
-            return sa.text(self.account.c.product.name + " ~ '%s'" % "^(?!113)")
+            self.sql = self.sql.where(sa.text(self.account.c.product.name + " ~ '%s'" % "^(?!113)"))
 
         elif type_ == FIX:
             where = "^113"
@@ -197,12 +159,34 @@ class SelectDeposit(object):
                 p = [FIXES[k] for k in args]
                 if len(p) > 0:
                     where = where + "\\d{3}(%s)$" % "|".join(p)
-            return sa.text(self.account.c.product.name + " ~ '%s'" % where)
+            self.sql = self.sql.where(sa.text(self.account.c.product.name + " ~ '%s'" % where))
 
-        return None
+        return self
 
-    @property
-    def group_by_user(self):
+    def save_to_excel(self, file, title=None, header=None):
+        book = xl.Workbook()
+        sheet = book.active
+
+        if title is not None:
+            sheet.title = title
+
+        if header is not None:
+            sheet.append(header)
+
+        for row in self.exec():
+            sheet.append(tuple(row))
+
+        book.save(file)
+
+
+class SelectUserDeposit(SelectDeposit):
+
+    def __init__(self, date, **kw):
+        super(SelectUserDeposit, self).__init__(date, **kw)
+
+        self.sql = self.raw()
+
+    def raw(self):
         return sa.select([
             self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
             self.balance, self.month_avg, self.season_avg, self.year_avg,
@@ -210,8 +194,21 @@ class SelectDeposit(object):
             select_from(self.source). \
             group_by(self.user.c.user)
 
-    @property
-    def group_by_customer(self):
+    def save_to_excel(self, file, title=None, header=None):
+        header = header or (
+            "用户", "姓名", "部门", "状态", "余额", "月均", "季均", "年均",
+        )
+        return super().save_to_excel(file, title=title, header=header)
+
+
+class SelectCustomerDeposit(SelectDeposit):
+
+    def __init__(self, date, **kw):
+        super(SelectCustomerDeposit, self).__init__(date, **kw)
+
+        self.sql = self.raw()
+
+    def raw(self):
         return sa.select([
             self.customer.c.customer, self.customer.c.name, self.customer.c.type, self.customer.c.open_date,
             self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
@@ -220,8 +217,23 @@ class SelectDeposit(object):
             select_from(self.source). \
             group_by(self.customer.c.customer, self.user.c.user)
 
-    @property
-    def group_by_account(self):
+    def save_to_excel(self, file, title=None, header=None):
+        header = header or (
+            "客户号", "名称", "类型", "开户日期",
+            "用户", "姓名", "部门", "状态",
+            "余额", "月均", "季均", "年均",
+        )
+        return super().save_to_excel(file, title=title, header=header)
+
+
+class SelectAccountDeposit(SelectDeposit):
+
+    def __init__(self, date, **kw):
+        super(SelectAccountDeposit, self).__init__(date, **kw)
+
+        self.sql = self.raw()
+
+    def raw(self):
         return sa.select([
             self.account.c.account, self.account.c.inst, self.account.c.product, self.account.c.open_date,
             self.customer.c.customer, self.customer.c.name, self.customer.c.type, self.customer.c.open_date,
@@ -231,8 +243,24 @@ class SelectDeposit(object):
             select_from(self.source). \
             group_by(self.account.c.account, self.customer.c.customer, self.user.c.user)
 
-    @property
-    def group_by_inst(self):
+    def save_to_excel(self, file, title=None, header=None):
+        header = header or (
+            "账号", "机构", "产品", "开户日期1",
+            "客户号", "名称", "类型", "开户日期2",
+            "用户", "姓名", "部门", "状态",
+            "余额", "月均", "季均", "年均",
+        )
+        return super().save_to_excel(file, title=title, header=header)
+
+
+class SelectInstDeposit(SelectDeposit):
+
+    def __init__(self, date, **kw):
+        super(SelectInstDeposit, self).__init__(date, **kw)
+
+        self.sql = self.raw()
+
+    def raw(self):
         return sa.select([
             self.account.c.inst,
             self.balance, self.month_avg, self.season_avg, self.year_avg,
@@ -240,386 +268,124 @@ class SelectDeposit(object):
             select_from(self.source). \
             group_by(self.account.c.inst)
 
+    def save_to_excel(self, file, title=None, header=None):
+        header = header or (
+            "账号", "余额", "月均", "季均", "年均",
+        )
+        return super().save_to_excel(file, title=title, header=header)
 
-def export_deposit_to_excel(sql, file, title=None, header=None):
-    res = db.query(sql)
 
-    book = xl.Workbook()
+def combine_deposit(demand, fix):
+    res = {}
+
+    for row in demand:
+        key = row[0]
+        r = []
+        r.extend((
+            *row[0: -4],
+            float(row[-4]), float(row[-3]), float(row[-2]), float(row[-1]),
+            0.00, 0.00, 0.00, 0.00,
+            float(row[-4]), float(row[-3]), float(row[-2]), float(row[-1]),))
+        res[key] = r
+
+    for row in fix:
+        key = row[0]
+        if key in res:
+            r = res[key]
+            r[-8] = float(row[-4])
+            r[-7] = float(row[-3])
+            r[-6] = float(row[-2])
+            r[-5] = float(row[-1])
+            r[-4] = r[-12] + r[-8]
+            r[-3] = r[-11] + r[-7]
+            r[-2] = r[-10] + r[-6]
+            r[-1] = r[-9] + r[-5]
+
+        else:
+            r = []
+            r.extend(
+                (*row[0: -4],
+                 0.00, 0.00, 0.00, 0.00,
+                 float(row[-4]), float(row[-3]), float(row[-2]), float(row[-1]),
+                 float(row[-4]), float(row[-3]), float(row[-2]), float(row[-1]),))
+            res[key] = r
+
+    return res
+
+
+def save_user_deposit(date, file, title=None):
+    res = combine_deposit(
+        SelectUserDeposit(date).product(DEMAND).exec(),
+        SelectUserDeposit(date).product(FIX).exec()
+    )
+
+    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "user.xlsx"))
     sheet = book.active
     if title is not None:
         sheet.title = title
 
-    if header is not None:
-        sheet.append(header)
-
-    for row in res:
-        sheet.append(list(row.values()))
+    for row in res.values():
+        sheet.append(row)
 
     book.save(file)
 
 
-def export_user_deposit_to_excel(sql, file, title=None, header=None):
-    header = header or (
-        "用户", "姓名", "部门", "状态", "余额", "月均", "季均", "年均",
+def save_customer_deposit(date, file, title=None):
+    res = combine_deposit(
+        SelectCustomerDeposit(date).product(DEMAND).exec(),
+        SelectCustomerDeposit(date).product(FIX).exec()
     )
-    export_deposit_to_excel(sql, file, title, header)
 
+    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "customer.xlsx"))
+    sheet = book.active
+    if title is not None:
+        sheet.title = title
 
-def export_customer_deposit_to_excel(sql, file, title=None, header=None):
-    pass
+    for row in res.values():
+        sheet.append(row)
 
+    book.save(file)
 
-class Export(object):
 
-    def __init__(self, sql):
-        super(Export, self).__init__()
+def save_account_deposit(date, file, title=None):
+    sql = SelectAccountDeposit(date)
 
-        self.sql = sql
+    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "account.xlsx"))
+    sheet = book.active
+    if title is not None:
+        sheet.title = title
 
-    @property
-    def rows(self):
-        return db.query(self.sql)
+    for row in sql.exec():
+        sheet.append(row.values())
 
-    def save_to_excel(self, file, title=None, template=None):
-        book = xl.Workbook() \
-            if template is None \
-            else xl.load_workbook(template)
+    book.save(file)
 
-        sheet = book.active
-        if title is not None:
-            sheet.title = title
 
-        for row in self.rows:
-            sheet.append(row.values())
+def save_inst_deposit(date, file, title=None, inputed=NIL):
+    demand = SelectInstDeposit(date).product(DEMAND)
+    fix = SelectInstDeposit(date).product(FIX)
 
-        book.save(file)
+    if inputed == INPUTED:
+        demand.where(demand.user.c.user != None)
+        fix.where(fix.user.c.user != None)
+    elif inputed == UNINPUTED:
+        demand.where(demand.user.c.user == None)
+        fix.where(fix.user.c.user == None)
 
+    res = combine_deposit(
+        demand.exec(),
+        fix.exec()
+    )
 
-def combine_demand_and_fix(demand, fix):
-    pass
+    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "inst.xlsx"))
+    sheet = book.active
+    if title is not None:
+        sheet.title = title
 
+    for row in res.values():
+        sheet.append(row)
 
-class ExportUserDeposit(object):
-
-    def __init__(self, meta):
-        super(ExportUserDeposit, self).__init__()
-
-        self.meta = meta
-        self.sql = self.meta.select_user_deposit()
-
-    @classmethod
-    def _row(cls, row):
-        od = OrderedDict()
-
-        od["user"] = row["user"]
-        od["name"] = row["name"]
-        od["dept"] = row["dept"]
-        od["state"] = row["state"]
-
-        od[DEMAND_BALANCE] = 0.00
-        od[DEMAND_MONTH_AVG] = 0.00
-        od[DEMAND_SEASON_AVG] = 0.00
-        od[DEMAND_YEAR_AVG] = 0.00
-
-        od[FIX_BALANCE] = 0.00
-        od[FIX_MONTH_AVG] = 0.00
-        od[FIX_SEASON_AVG] = 0.00
-        od[FIX_YEAR_AVG] = 0.00
-
-        od[SUM_BALANCE] = 0.00
-        od[SUM_MONTH_AVG] = 0.00
-        od[SUM_SEASON_AVG] = 0.00
-        od[SUM_YEAR_AVG] = 0.00
-
-        return od
-
-    def _combine(self, demand, fix):
-        res = {}
-
-        for row in demand:
-            user = row["user"]
-            if user not in res:
-                res[user] = self._row(row)
-            item = res[user]
-            item[DEMAND_BALANCE] = float(row["balance"])
-            item[DEMAND_MONTH_AVG] = float(row["month_avg"])
-            item[DEMAND_SEASON_AVG] = float(row["season_avg"])
-            item[DEMAND_YEAR_AVG] = float(row["year_avg"])
-
-        for row in fix:
-            user = row["user"]
-            if user not in res:
-                res[user] = self._row(row)
-            item = res[user]
-            item[FIX_BALANCE] = float(row["balance"])
-            item[FIX_MONTH_AVG] = float(row["month_avg"])
-            item[FIX_SEASON_AVG] = float(row["season_avg"])
-            item[FIX_YEAR_AVG] = float(row["year_avg"])
-
-        for v in res.values():
-            v[SUM_BALANCE] = v[DEMAND_BALANCE] + v[FIX_BALANCE]
-            v[SUM_MONTH_AVG] = v[DEMAND_MONTH_AVG] + v[FIX_MONTH_AVG]
-            v[SUM_SEASON_AVG] = v[DEMAND_SEASON_AVG] + v[FIX_SEASON_AVG]
-            v[SUM_YEAR_AVG] = v[DEMAND_YEAR_AVG] + v[FIX_YEAR_AVG]
-
-        return res
-
-    def result(self):
-        sql = self.sql.where(self.meta.product(DEMAND))
-        demand = db.query(sql)
-
-        sql = self.sql.where(self.meta.product(FIX))
-        fix = db.query(sql)
-
-        return self._combine(demand, fix)
-
-    def save_to_excel(self, file, sheet=None):
-        template = os.path.join(config.TEMPLATE_DIR, "deposit", "user.xlsx")
-
-        wb = xl.load_workbook(template)
-        ws = wb.active
-        if sheet is not None:
-            ws.title = sheet
-
-        for row in self.result().values():
-            ws.append(list(row.values()))
-
-        wb.save(file)
-
-
-class ExportCustomerDeposit(object):
-
-    def __init__(self, meta):
-        super(ExportCustomerDeposit, self).__init__()
-
-        self.meta = meta
-        self.sql = self.meta.select_customer_deposit()
-
-    @classmethod
-    def _row(cls, row):
-        od = OrderedDict()
-
-        od["customer"] = row["customer"]
-        od["name"] = row["name"]
-        od["type"] = row["type"]
-        od["open_date"] = row["open_date"]
-
-        od[DEMAND_BALANCE] = 0.00
-        od[DEMAND_MONTH_AVG] = 0.00
-        od[DEMAND_SEASON_AVG] = 0.00
-        od[DEMAND_YEAR_AVG] = 0.00
-
-        od[FIX_BALANCE] = 0.00
-        od[FIX_MONTH_AVG] = 0.00
-        od[FIX_SEASON_AVG] = 0.00
-        od[FIX_YEAR_AVG] = 0.00
-
-        od[SUM_BALANCE] = 0.00
-        od[SUM_MONTH_AVG] = 0.00
-        od[SUM_SEASON_AVG] = 0.00
-        od[SUM_YEAR_AVG] = 0.00
-
-        od["user"] = row["user"]
-        od["user_name"] = row["user_name"]
-        od["dept"] = row["dept"]
-        od["state"] = row["state"]
-
-        return od
-
-    def _combine(self, demand, fix):
-        res = {}
-
-        for row in demand:
-            customer = row["customer"]
-            if customer not in res:
-                res[customer] = self._row(row)
-            item = res[customer]
-            item[DEMAND_BALANCE] = float(row["balance"])
-            item[DEMAND_MONTH_AVG] = float(row["month_avg"])
-            item[DEMAND_SEASON_AVG] = float(row["season_avg"])
-            item[DEMAND_YEAR_AVG] = float(row["year_avg"])
-
-        for row in fix:
-            customer = row["customer"]
-            if customer not in res:
-                res[customer] = self._row(row)
-            item = res[customer]
-            item[FIX_BALANCE] = float(row["balance"])
-            item[FIX_MONTH_AVG] = float(row["month_avg"])
-            item[FIX_SEASON_AVG] = float(row["season_avg"])
-            item[FIX_YEAR_AVG] = float(row["year_avg"])
-
-        for v in res.values():
-            v[SUM_BALANCE] = v[DEMAND_BALANCE] + v[FIX_BALANCE]
-            v[SUM_MONTH_AVG] = v[DEMAND_MONTH_AVG] + v[FIX_MONTH_AVG]
-            v[SUM_SEASON_AVG] = v[DEMAND_SEASON_AVG] + v[FIX_SEASON_AVG]
-            v[SUM_YEAR_AVG] = v[DEMAND_YEAR_AVG] + v[FIX_YEAR_AVG]
-
-        return res
-
-    def result(self):
-        sql = self.sql.where(self.meta.product(DEMAND))
-        demand = db.query(sql)
-
-        sql = self.sql.where(self.meta.product(FIX))
-        fix = db.query(sql)
-
-        return self._combine(demand, fix)
-
-    def save_to_excel(self, file, sheet=None):
-        template = os.path.join(config.TEMPLATE_DIR, "deposit", "customer.xlsx")
-
-        wb = xl.load_workbook(template)
-        ws = wb.active
-        if sheet is not None:
-            ws.title = sheet
-
-        for row in self.result().values():
-            ws.append(list(row.values()))
-
-        wb.save(file)
-
-
-class ExportAccountDeposit(object):
-
-    def __init__(self, meta):
-        super(ExportAccountDeposit, self).__init__()
-
-        self.meta = meta
-        self.sql = self.meta.select_account_deposit()
-
-    def result(self):
-        res = {}
-
-        for row in db.query(self.sql):
-            account = row["account"]
-
-            od = OrderedDict()
-
-            od["account"] = row["account"]
-            od["inst"] = row["inst"]
-            od["product"] = row["product"]
-            od["open_date"] = row["open_date"]
-
-            od["customer"] = row["customer"]
-            od["name"] = row["name"]
-            od["type"] = row["type"]
-            od["customer_open_date"] = row["customer_open_date"]
-
-            od["balance"] = float(row["balance"])
-            od["month_avg"] = float(row["month_avg"])
-            od["season_avg"] = float(row["season_avg"])
-            od["year_avg"] = float(row["year_avg"])
-
-            od["user"] = row["user"]
-            od["user_name"] = row["user_name"]
-            od["dept"] = row["dept"]
-            od["state"] = row["state"]
-
-            res[account] = od
-
-        return res
-
-    def save_to_excel(self, file, sheet=None):
-        template = os.path.join(config.TEMPLATE_DIR, "deposit", "account.xlsx")
-
-        wb = xl.load_workbook(template)
-        ws = wb.active
-        if sheet is not None:
-            ws.title = sheet
-
-        for row in self.result().values():
-            ws.append(list(row.values()))
-
-        wb.save(file)
-
-
-class ExportInstDeposit(object):
-
-    def __init__(self, meta):
-        super(ExportInstDeposit, self).__init__()
-
-        self.meta = meta
-        self.sql = self.meta.select_inst_deposit()
-
-    @classmethod
-    def _row(cls, row):
-        od = OrderedDict()
-
-        od["inst"] = row["inst"]
-        od["name"] = ""
-        od["dept"] = ""
-        od["state"] = ""
-
-        od[DEMAND_BALANCE] = 0.00
-        od[DEMAND_MONTH_AVG] = 0.00
-        od[DEMAND_SEASON_AVG] = 0.00
-        od[DEMAND_YEAR_AVG] = 0.00
-
-        od[FIX_BALANCE] = 0.00
-        od[FIX_MONTH_AVG] = 0.00
-        od[FIX_SEASON_AVG] = 0.00
-        od[FIX_YEAR_AVG] = 0.00
-
-        od[SUM_BALANCE] = 0.00
-        od[SUM_MONTH_AVG] = 0.00
-        od[SUM_SEASON_AVG] = 0.00
-        od[SUM_YEAR_AVG] = 0.00
-
-        return od
-
-    def _combine(self, demand, fix):
-        res = {}
-
-        for row in demand:
-            inst = row["inst"]
-            if inst not in res:
-                res[inst] = self._row(row)
-            item = res[inst]
-            item[DEMAND_BALANCE] = float(row["balance"])
-            item[DEMAND_MONTH_AVG] = float(row["month_avg"])
-            item[DEMAND_SEASON_AVG] = float(row["season_avg"])
-            item[DEMAND_YEAR_AVG] = float(row["year_avg"])
-
-        for row in fix:
-            inst = row["inst"]
-            if inst not in res:
-                res[inst] = self._row(row)
-            item = res[inst]
-            item[FIX_BALANCE] = float(row["balance"])
-            item[FIX_MONTH_AVG] = float(row["month_avg"])
-            item[FIX_SEASON_AVG] = float(row["season_avg"])
-            item[FIX_YEAR_AVG] = float(row["year_avg"])
-
-        for v in res.values():
-            v[SUM_BALANCE] = v[DEMAND_BALANCE] + v[FIX_BALANCE]
-            v[SUM_MONTH_AVG] = v[DEMAND_MONTH_AVG] + v[FIX_MONTH_AVG]
-            v[SUM_SEASON_AVG] = v[DEMAND_SEASON_AVG] + v[FIX_SEASON_AVG]
-            v[SUM_YEAR_AVG] = v[DEMAND_YEAR_AVG] + v[FIX_YEAR_AVG]
-
-        return res
-
-    def result(self):
-        sql = self.sql.where(self.meta.product(DEMAND))
-        demand = db.query(sql)
-
-        sql = self.sql.where(self.meta.product(FIX))
-        fix = db.query(sql)
-
-        return self._combine(demand, fix)
-
-    def save_to_excel(self, file, sheet=None):
-        template = os.path.join(config.TEMPLATE_DIR, "deposit", "inst.xlsx")
-
-        wb = xl.load_workbook(template)
-        ws = wb.active
-        if sheet is not None:
-            ws.title = sheet
-
-        for row in self.result().values():
-            ws.append(list(row.values()))
-
-        wb.save(file)
+    book.save(file)
 
 
 class Insert(object):
@@ -825,23 +591,6 @@ class ImportDepositOwner(object):
         return self.sql.exec(*content)
 
 
-def export_all_deposit(date, dir_):
-    meta = MetaDeposit(date)
-
-    ex = ExportUserDeposit(meta)
-    ex.save_to_excel(os.path.join(dir_, "USER-" + date + ".xlsx"))
-
-    ex = ExportCustomerDeposit(meta)
-    ex.save_to_excel(os.path.join(dir_, "CUSTOMER-" + date + ".xlsx"))
-
-    ex = ExportAccountDeposit(meta)
-    ex.save_to_excel(os.path.join(dir_, "ACCOUNT-" + date + ".xlsx"))
-
-    ex = ExportInstDeposit(meta)
-    ex.sql = ex.sql.where(ex.meta.user.c.user == None)
-    ex.save_to_excel(os.path.join(dir_, "INST-" + date + ".xlsx"))
-
-
 def import_all(dir_):
     files = os.listdir(dir_)
 
@@ -860,5 +609,8 @@ def import_all(dir_):
 
 
 if __name__ == "__main__":
-    export_all_deposit("20181231", "D:/Desktop")
+
+    date = "20190223"
+    sel = SelectCustomerDeposit(date)
+    sel.save_to_excel("D:/Desktop/1.xlsx")
 
