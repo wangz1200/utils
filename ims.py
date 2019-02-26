@@ -610,7 +610,7 @@ def import_all(dir_):
 
 if __name__ == "__main__":
 
-    date = "20190223"
-    sel = SelectCustomerDeposit(date)
+    date = "20190224"
+    sel = SelectUserDeposit(date)
     sel.save_to_excel("D:/Desktop/1.xlsx")
 

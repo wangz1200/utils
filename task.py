@@ -4,13 +4,12 @@ import os
 import datetime
 import ims
 from crawler import jm
-import config
 
 
 def job():
     date = (datetime.datetime.now()-datetime.timedelta(days=1)).strftime("%Y%m%d")
 
-    out = os.path.join(config.OUT_DIR, date)
+    out = os.path.join("D:/Desktop/repo/out", date)
     os.makedirs(out, exist_ok=True)
 
     jm.download_all(date, out)
