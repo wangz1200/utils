@@ -417,12 +417,11 @@ class Insert(object):
         return db.commit(self.sql, *args, **kw)
 
 
-class ImportUser(object):
+class InsertUser(Insert):
 
-    def __init__(self):
-        super(ImportUser, self).__init__()
-
-        self.sql = Insert(db.table("user"))
+    def __init__(self, name="user"):
+        t = db.table(name)
+        super(InsertUser, self).__init__(t)
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -439,15 +438,14 @@ class ImportUser(object):
                 }
             )
         wb.close()
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
 
-class ImportCustomer(object):
+class InsertCustomer(Insert):
 
-    def __init__(self):
-        super(ImportCustomer, self).__init__()
-
-        self.sql = Insert(db.table("customer"))
+    def __init__(self, name="customer"):
+        t = db.table(name)
+        super(InsertCustomer, self).__init__(t)
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -463,7 +461,7 @@ class ImportCustomer(object):
                 }
             )
         wb.close()
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
     def from_txt(self, file, delimiter=","):
         content = []
@@ -480,15 +478,14 @@ class ImportCustomer(object):
                     "open_date": row[10].replace(" ", ""),
                 })
 
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
 
-class ImportDepositAccount(object):
+class InsertDepositAccount(Insert):
 
-    def __init__(self):
-        super(ImportDepositAccount, self).__init__()
-
-        self.sql = Insert(db.table("deposit_account"))
+    def __init__(self, name="deposit_account"):
+        t = db.table(name)
+        super(InsertDepositAccount, self).__init__(t)
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -505,7 +502,7 @@ class ImportDepositAccount(object):
                 }
             )
         wb.close()
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
     def from_txt(self, file, delimiter=","):
         content = []
@@ -521,15 +518,14 @@ class ImportDepositAccount(object):
                     "open_date": row[9].replace(" ", ""),
                 })
 
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
 
-class ImportDepositData(object):
+class InsertDepositData(Insert):
 
-    def __init__(self):
-        super(ImportDepositData, self).__init__()
-
-        self.sql = Insert(db.table("deposit_data"))
+    def __init__(self, name="deposit_data"):
+        t = db.table(name)
+        super(InsertDepositData, self).__init__(t)
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -539,16 +535,16 @@ class ImportDepositData(object):
             content.append(
                 {
                     "account": row[3].value,
-                    "state": row[11].value,
-                    "balance": row[13].value,
-                    "month_acc": row[14].value,
-                    "season_acc": row[15].value,
+                    "state": row[12].value,
+                    "balance": row[14].value,
+                    "month_acc": row[15].value,
+                    "season_acc": row[17].value,
                     "year_acc": row[16].value,
-                    "date": row[17].value,
+                    "date": row[18].value,
                 }
             )
         wb.close()
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
     def from_txt(self, file, delimiter=","):
         content = []
@@ -558,23 +554,22 @@ class ImportDepositData(object):
                 row = line.split(delimiter)
                 content.append({
                     "account": row[3].replace(" ", ""),
-                    "state": row[11].replace(" ", ""),
-                    "balance": row[13].replace(" ", ""),
-                    "month_acc": row[14].replace(" ", ""),
-                    "season_acc": row[15].replace(" ", ""),
+                    "state": row[12].replace(" ", ""),
+                    "balance": row[14].replace(" ", ""),
+                    "month_acc": row[15].replace(" ", ""),
+                    "season_acc": row[17].replace(" ", ""),
                     "year_acc": row[16].replace(" ", ""),
-                    "date": row[17].replace(" ", ""),
+                    "date": row[18].replace(" ", ""),
                 })
 
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
 
-class ImportDepositOwner(object):
+class ImportDepositOwner(Insert):
 
-    def __init__(self):
-        super(ImportDepositOwner, self).__init__()
-
-        self.sql = Insert(db.table("deposit_owner"))
+    def __init__(self, name="deposit_owner"):
+        t = db.table(name)
+        super(ImportDepositOwner, self).__init__(t)
 
     def from_excel(self, file, sheet=None):
         wb = xl.load_workbook(file)
@@ -588,28 +583,51 @@ class ImportDepositOwner(object):
                 }
             )
         wb.close()
-        return self.sql.exec(*content)
+        return self.exec(*content)
 
 
-def import_all(dir_):
+def import_all(dir_, with_update=False):
+
     files = os.listdir(dir_)
 
     for f in files:
         if f.startswith("CUS"):
-            im = ImportCustomer()
-            im.sql.do_nothing()
-            im.from_txt(os.path.join(dir_, f))
-        elif f.startswith("DEP"):
-            im = ImportDepositAccount()
-            im.sql.do_nothing()
-            im.from_txt(os.path.join(dir_, f))
+            insert = InsertCustomer()
+            if with_update is True:
+                insert.do_update()
+            else:
+                insert.do_nothing()
+            ret = insert.from_txt(os.path.join(dir_, f))
+            print("Insert Customer --- %s:" % f, " Result: ", ret)
 
-            im = ImportDepositData()
-            im.from_txt(os.path.join(dir_, f))
+        elif f.startswith("DEP"):
+            insert = InsertDepositAccount()
+            if with_update is True:
+                insert.do_update()
+            else:
+                insert.do_nothing()
+            ret = insert.from_txt(os.path.join(dir_, f))
+            print("Insert Deposit Account --- %s:" % f, " Result: ", ret)
+
+            insert = InsertDepositData()
+            ret = insert.from_txt(os.path.join(dir_, f))
+            print("Insert Deposit Data --- %s:" % f, " Result: ", ret)
 
 
 if __name__ == "__main__":
 
-    date = "20190226"
-    save_user_deposit(date, "D:/Desktop/1.xlsx")
+    #im = ImportDepositOwner()
+    #im.sql.do_nothing()
+    #im.from_excel("D:/Desktop/repo/owner/OWNER.xlsx")
+
+    date = "20190305"
+    save_user_deposit(date, "D:/Desktop/USER-" + date + ".xlsx")
+    save_customer_deposit(date, "D:/Desktop/CUSTOMER-" + date + ".xlsx")
+    save_account_deposit(date, "D:/Desktop/ACCOUNT-" + date + ".xlsx")
+    save_inst_deposit(date, "D:/Desktop/INST-" + date + ".xlsx", inputed=UNINPUTED)
+
+    #sel = SelectInstDeposit(date)
+    #sel.product(FIX, 12, 24, 36, 60)
+    #sel.where(sel.user.c.user == None)
+    #sel.save_to_excel("D:/Desktop/INST.xlsx")
 
