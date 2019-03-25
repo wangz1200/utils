@@ -474,16 +474,31 @@ def insert_with_nothing(t):
     return stmt
 
 
-def insert_users_from_txt(file, with_update=False, delimter=","):
-    pass
+def insert_users_from_txt(file, with_update=False, delimiter=","):
+    content = []
+    with open(file, encoding="utf8") as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            row = line.split(delimiter)
+            content.append({
+                "u": row[0].replace(" ", ""),
+                "password": row[1].replace(" ", ""),
+                "name": row[2].replace(" ", ""),
+                "dept": row[3].replace(" ", ""),
+                "state": row[4].replace(" ", ""),
+            })
+    t = db.t("users")
+    if with_update:
+        stmt = insert_with_update(t)
+    else:
+        stmt = insert_with_nothing(t)
+    return db.commit(stmt, *content)
 
 
 def insert_cust_from_txt(file, with_update=False, delimiter=","):
     content = []
     with open(file, encoding="utf8") as f:
         lines = f.readlines()
-        if len(lines) <= 1:
-            return
         for line in lines[1:]:
             row = line.split(delimiter)
             content.append({
@@ -540,10 +555,44 @@ def insert_dep_data_from_txt(date, file, delimiter=","):
     return db.commit(stmt, *content)
 
 
+def insert_dep_cust_owner(file, delimiter=",", with_update=False):
+    content = []
+    with open(file, encoding="utf8") as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            row = line.split(delimiter)
+            content.append({
+                "cust": row[0].replace(" ", ""),
+                "u": row[1].replace(" ", ""),
+            })
+    t = db.t("dep_cust_owner")
+    if with_update:
+        stmt = insert_with_update(t)
+    else:
+        stmt = insert_with_nothing(t)
+    return db.commit(stmt, *content)
+
+
+def insert_dep_acct_owner(file, delimiter=",", with_update=False):
+    content = []
+    with open(file, encoding="utf8") as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            row = line.split(delimiter)
+            content.append({
+                "cust": row[0].replace(" ", ""),
+                "u": row[1].replace(" ", ""),
+            })
+    t = db.t("dep_acct_owner")
+    if with_update:
+        stmt = insert_with_update(t)
+    else:
+        stmt = insert_with_nothing(t)
+    return db.commit(stmt, *content)
+
+
 def import_all(dir_, date, with_update=False):
-
     files = os.listdir(dir_)
-
     for f in files:
         if f.startswith("CUS"):
             ret = insert_cust_from_txt(os.path.join(dir_, f), with_update=with_update)
