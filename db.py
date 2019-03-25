@@ -14,7 +14,10 @@ class Table(object):
         return self.metadata.tables.get(name, None)
 
     def register(self, name, *columns):
-        return sa.Table(name, self.metadata, *columns)
+        if name in self.metadata.tables:
+            return self.metadata.tables[name]
+        else:
+            return sa.Table(name, self.metadata, *columns)
 
     def create(self, name, *columns):
         t = self.register(name, *columns)

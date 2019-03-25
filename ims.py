@@ -8,49 +8,6 @@ from db import DB
 import config
 
 
-USER_COLUMNS = (
-    sa.Column("user", sa.VARCHAR(32)),
-    sa.Column("password", sa.VARCHAR(256)),
-    sa.Column("name", sa.VARCHAR(32)),
-    sa.Column("dept", sa.VARCHAR(32)),
-    sa.Column("state", sa.VARCHAR(32)),
-    sa.PrimaryKeyConstraint("user"),
-)
-CUSTOMER_COLUMNS = (
-    sa.Column("customer", sa.VARCHAR(32)),
-    sa.Column("name", sa.VARCHAR(128)),
-    sa.Column("type", sa.VARCHAR(32)),
-    sa.Column("open_date", sa.DATE),
-    sa.PrimaryKeyConstraint("customer"),
-)
-DEPOSIT_ACCOUNT_COLUMNS = (
-    sa.Column("account", sa.VARCHAR(32)),
-    sa.Column("customer", sa.VARCHAR(32), ),
-    sa.Column("inst", sa.VARCHAR(32)),
-    sa.Column("product", sa.VARCHAR(32)),
-    sa.Column("open_date", sa.DATE),
-    sa.PrimaryKeyConstraint("account"),
-    sa.ForeignKeyConstraint(("customer",), ["customer.customer", ]),
-)
-DEPOSIT_DATA_COLUMNS = (
-    sa.Column("account", sa.VARCHAR(32)),
-    sa.Column("state", sa.VARCHAR(32)),
-    sa.Column("balance", sa.NUMERIC(32, 2, asdecimal=False)),
-    sa.Column("month_acc", sa.NUMERIC(32, 2, asdecimal=False)),
-    sa.Column("season_acc", sa.NUMERIC(32, 2, asdecimal=False)),
-    sa.Column("year_acc", sa.NUMERIC(32, 2, asdecimal=False)),
-    sa.Column("date", sa.DATE),
-    sa.ForeignKeyConstraint(("account",), ["deposit_account.account", ]),
-)
-DEPOSIT_OWNER_COLUMNS = (
-    sa.Column("customer", sa.VARCHAR(32)),
-    sa.Column("user", sa.VARCHAR(32)),
-    sa.PrimaryKeyConstraint("customer"),
-    sa.ForeignKeyConstraint(("user",), ["user.user", ]),
-    sa.ForeignKeyConstraint(("customer",), ["customer.customer", ]),
-)
-
-
 db = DB(
     host=config.IMS_DB_HOST,
     port=config.IMS_DB_PORT,
@@ -63,12 +20,110 @@ if db.ping() is False:
     pass
 
 
-db.table.register("user", *USER_COLUMNS)
-db.table.register("customer", *CUSTOMER_COLUMNS)
-db.table.register("deposit_account", *DEPOSIT_ACCOUNT_COLUMNS)
-db.table.register("deposit_data", *DEPOSIT_DATA_COLUMNS)
-db.table.register("deposit_owner", *DEPOSIT_OWNER_COLUMNS)
-db.table.create_all()
+def create_table(name, *columns):
+
+    t = db.t(name)
+    if t is None:
+        t = db.t.create(name, *columns)
+
+    return t
+
+
+def create_users_table(name=None):
+
+    return db.t.create(
+        name or "users",
+        sa.Column("u", sa.VARCHAR(32)),
+        sa.Column("password", sa.VARCHAR(256)),
+        sa.Column("name", sa.VARCHAR(32)),
+        sa.Column("dept", sa.VARCHAR(32)),
+        sa.Column("state", sa.VARCHAR(32)),
+        sa.PrimaryKeyConstraint("u"),
+    )
+
+
+def create_cust_table(name=None):
+
+    return db.t.create(
+        name or "cust",
+        sa.Column("cust", sa.VARCHAR(32)),
+        sa.Column("name", sa.VARCHAR(128)),
+        sa.Column("type", sa.VARCHAR(32)),
+        sa.Column("open_date", sa.DATE),
+        sa.PrimaryKeyConstraint("cust"),
+    )
+
+
+def create_dep_acct_table(name=None):
+
+    return db.t.create(
+        name or "dep_acct",
+        sa.Column("acct", sa.VARCHAR(32)),
+        sa.Column("cust", sa.VARCHAR(32), ),
+        sa.Column("inst", sa.VARCHAR(32)),
+        sa.Column("prod", sa.VARCHAR(32)),
+        sa.Column("open_date", sa.DATE),
+        sa.PrimaryKeyConstraint("acct"),
+        sa.ForeignKeyConstraint(("cust",), ["cust.cust", ]),
+    )
+
+
+def create_dep_data_table(name=None):
+
+    return db.t.create(
+        name or "dep_data",
+        sa.Column("acct", sa.VARCHAR(32)),
+        sa.Column("balance", sa.NUMERIC(32, 2, asdecimal=False)),
+        sa.Column("month_acc", sa.NUMERIC(32, 2, asdecimal=False)),
+        sa.Column("season_acc", sa.NUMERIC(32, 2, asdecimal=False)),
+        sa.Column("year_acc", sa.NUMERIC(32, 2, asdecimal=False)),
+        sa.Column("date", sa.DATE),
+        sa.ForeignKeyConstraint(("acct",), ["dep_acct.acct", ]),
+    )
+
+
+def create_dep_cust_owner_table(name=None):
+
+    return db.t.create(
+        name or "dep_cust_owner",
+        sa.Column("cust", sa.VARCHAR(32)),
+        sa.Column("u", sa.VARCHAR(32)),
+        sa.PrimaryKeyConstraint("cust"),
+        sa.ForeignKeyConstraint(("cust",), ["cust.cust", ]),
+        sa.ForeignKeyConstraint(("u",), ["users.u", ]),
+    )
+
+
+def create_dep_acct_owner_table(name=None):
+
+    return db.t.create(
+        name or "dep_acct_owner",
+        sa.Column("acct", sa.VARCHAR(32)),
+        sa.Column("u", sa.VARCHAR(32)),
+        sa.PrimaryKeyConstraint("acct"),
+        sa.ForeignKeyConstraint(("acct",), ["dep_acct.acct", ]),
+        sa.ForeignKeyConstraint(("u",), ["users.u", ]),
+    )
+
+
+def create_dep_owner_table(name=None):
+
+    return db.t.create(
+        name or "dep_owner",
+        sa.Column("acct", sa.VARCHAR(32)),
+        sa.Column("u", sa.VARCHAR(32)),
+        sa.PrimaryKeyConstraint("acct"),
+        sa.ForeignKeyConstraint(("acct",), ["dep_acct.acct", ]),
+        sa.ForeignKeyConstraint(("u",), ["users.u", ]),
+    )
+
+
+create_users_table()
+create_cust_table()
+create_dep_acct_table()
+create_dep_cust_owner_table()
+create_dep_acct_owner_table()
+create_dep_owner_table()
 
 
 DAYS1 = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,)
@@ -104,35 +159,21 @@ def days(date):
     return m, s, y
 
 
-NIL = 0
-NULL = 0
-DEMAND = 1
-FIX = 2
 FIXES = {3: "03", 6: "06", 12: "12", 24: "24", 36: "36", 60: "60", }
 
-INPUTED = 1
-UNINPUTED = 2
 
-
-class SelectDeposit(object):
+class _SelectDep(object):
 
     def __init__(self, date, scale=10000, precision=2):
-        super(SelectDeposit, self).__init__()
 
-        self.date = date
+        super(_SelectDep, self).__init__()
 
-        self.user = db.table("user")
-        self.customer = db.table("customer")
-        self.account = db.table("deposit_account")
-        self.owner = db.table("deposit_owner")
+        self.users = db.table("users")
+        self.cust = db.table("cust")
+        self.acct = db.table("dep_acct")
 
-        data = db.table("deposit_data")
+        data = create_dep_data_table("dep_data_" + date[0:4])
         self.data = sa.select([data, ]).where(data.c.date == date).alias("data")
-
-        self.source = self.data.join(self.account, self.data.c.account == self.account.c.account). \
-            join(self.customer, self.customer.c.customer == self.account.c.customer). \
-            outerjoin(self.owner, self.owner.c.customer == self.customer.c.customer). \
-            outerjoin(self.user, self.user.c.user == self.owner.c.user)
 
         m, s, y = days(date)
         self.balance = sa.func.round(sa.func.sum(self.data.c.balance) / scale, precision)
@@ -142,137 +183,140 @@ class SelectDeposit(object):
 
         self.sql = None
 
-    def where(self, clause):
-        self.sql = self.sql.where(clause)
-        return self
+    def demand(self):
+        return self.sql.where(sa.text(self.acct.c.prod.name + " ~ '%s'" % "^(?!113)"))
 
-    def exec(self):
-        return db.query(self.sql)
-
-    def product(self, type_, *args):
-        if type_ == DEMAND:
-            self.sql = self.sql.where(sa.text(self.account.c.product.name + " ~ '%s'" % "^(?!113)"))
-
-        elif type_ == FIX:
-            where = "^113"
-            if len(args) > 0:
-                p = [FIXES[k] for k in args]
-                if len(p) > 0:
-                    where = where + "\\d{3}(%s)$" % "|".join(p)
-            self.sql = self.sql.where(sa.text(self.account.c.product.name + " ~ '%s'" % where))
-
-        return self
-
-    def save_to_excel(self, file, title=None, header=None):
-        book = xl.Workbook()
-        sheet = book.active
-
-        if title is not None:
-            sheet.title = title
-
-        if header is not None:
-            sheet.append(header)
-
-        for row in self.exec():
-            sheet.append(tuple(row))
-
-        book.save(file)
+    def fix(self, *args):
+        where = "^113"
+        if len(args) > 0:
+            p = [FIXES[k] for k in args]
+            if len(p) > 0:
+                where = where + "\\d{3}(%s)$" % "|".join(p)
+        return self.sql.where(sa.text(self.acct.c.prod.name + " ~ '%s'" % where))
 
 
-class SelectUserDeposit(SelectDeposit):
+class SelectUserDep(_SelectDep):
+
+    HEADER = ("用户", "姓名", "部门", "状态", "余额", "月均", "季均", "年均", )
 
     def __init__(self, date, **kw):
-        super(SelectUserDeposit, self).__init__(date, **kw)
 
-        self.sql = self.raw()
+        super(SelectUserDep, self).__init__(date, **kw)
 
-    def raw(self):
-        return sa.select([
-            self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
-            self.balance, self.month_avg, self.season_avg, self.year_avg,
-        ]). \
-            select_from(self.source). \
-            group_by(self.user.c.user)
+        self.owner = db.table("dep_owner")
 
-    def save_to_excel(self, file, title=None, header=None):
-        header = header or (
-            "用户", "姓名", "部门", "状态", "余额", "月均", "季均", "年均",
-        )
-        return super().save_to_excel(file, title=title, header=header)
+        self.source = self.data.join(self.acct, self.data.c.acct == self.acct.c.acct). \
+            outerjoin(self.owner, self.owner.c.acct == self.acct.c.acct). \
+            outerjoin(self.users, self.users.c.u == self.owner.c.u)
 
-
-class SelectCustomerDeposit(SelectDeposit):
-
-    def __init__(self, date, **kw):
-        super(SelectCustomerDeposit, self).__init__(date, **kw)
-
-        self.sql = self.raw()
-
-    def raw(self):
-        return sa.select([
-            self.customer.c.customer, self.customer.c.name, self.customer.c.type, self.customer.c.open_date,
-            self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
-            self.balance, self.month_avg, self.season_avg, self.year_avg,
-        ]). \
-            select_from(self.source). \
-            group_by(self.customer.c.customer, self.user.c.user)
-
-    def save_to_excel(self, file, title=None, header=None):
-        header = header or (
-            "客户号", "名称", "类型", "开户日期",
-            "用户", "姓名", "部门", "状态",
-            "余额", "月均", "季均", "年均",
-        )
-        return super().save_to_excel(file, title=title, header=header)
+        self.sql = sa.select([
+            self.users.c.u,
+            self.users.c.name,
+            self.users.c.dept,
+            self.users.c.state,
+            self.balance,
+            self.month_avg,
+            self.season_avg,
+            self.year_avg
+        ]).\
+            select_from(self.source).\
+            group_by(self.users.c.u)
 
 
-class SelectAccountDeposit(SelectDeposit):
+class SelectCustDep(_SelectDep):
+
+    HEADER = ("客户号", "客户名称", "客户类型", "开户日期", "用户", "姓名", "部门", "状态", "余额", "月均", "季均", "年均", )
 
     def __init__(self, date, **kw):
-        super(SelectAccountDeposit, self).__init__(date, **kw)
 
-        self.sql = self.raw()
+        super(SelectCustDep, self).__init__(date, **kw)
 
-    def raw(self):
-        return sa.select([
-            self.account.c.account, self.account.c.inst, self.account.c.product, self.account.c.open_date,
-            self.customer.c.customer, self.customer.c.name, self.customer.c.type, self.customer.c.open_date,
-            self.user.c.user, self.user.c.name, self.user.c.dept, self.user.c.state,
-            self.balance, self.month_avg, self.season_avg, self.year_avg,
-        ]). \
-            select_from(self.source). \
-            group_by(self.account.c.account, self.customer.c.customer, self.user.c.user)
+        self.owner = db.table("dep_cust_owner")
 
-    def save_to_excel(self, file, title=None, header=None):
-        header = header or (
-            "账号", "机构", "产品", "开户日期1",
-            "客户号", "名称", "类型", "开户日期2",
-            "用户", "姓名", "部门", "状态",
-            "余额", "月均", "季均", "年均",
-        )
-        return super().save_to_excel(file, title=title, header=header)
+        self.source = self.data.join(self.acct, self.data.c.acct == self.acct.c.acct). \
+            join(self.cust, self.cust.c.cust == self.acct.c.cust). \
+            outerjoin(self.owner, self.owner.c.cust == self.acct.c.cust). \
+            outerjoin(self.users, self.users.c.u == self.owner.c.u)
+
+        self.sql = sa.select([
+            self.cust.c.cust,
+            self.cust.c.name,
+            self.cust.c.type,
+            self.cust.c.open_date,
+            self.users.c.u,
+            self.users.c.name,
+            self.users.c.dept,
+            self.users.c.state,
+            self.balance,
+            self.month_avg,
+            self.season_avg,
+            self.year_avg
+        ]).\
+            select_from(self.source).\
+            group_by(self.cust.c.cust, self.users.c.u)
 
 
-class SelectInstDeposit(SelectDeposit):
+class SelectAcctDep(_SelectDep):
+
+    HEADER = ("账户", "机构", "产品", "开户日期", "客户号", "客户名称", "类型", "开户日期2", "用户", "姓名", "部门", "机构", "余额", "月均", "季均", "年均", )
 
     def __init__(self, date, **kw):
-        super(SelectInstDeposit, self).__init__(date, **kw)
 
-        self.sql = self.raw()
+        super(SelectAcctDep, self).__init__(date, **kw)
 
-    def raw(self):
-        return sa.select([
-            self.account.c.inst,
-            self.balance, self.month_avg, self.season_avg, self.year_avg,
+        self.owner = db.table("dep_owner")
+
+        self.source = self.data.join(self.acct, self.data.c.acct == self.acct.c.acct). \
+            join(self.cust, self.cust.c.cust == self.acct.c.cust). \
+            outerjoin(self.owner, self.owner.c.acct == self.acct.c.acct). \
+            outerjoin(self.users, self.users.c.u == self.owner.c.u)
+
+        self.sql = sa.select([
+            self.acct.c.acct,
+            self.acct.c.inst,
+            self.acct.c.prod,
+            self.acct.c.open_date,
+            self.cust.c.cust,
+            self.cust.c.name,
+            self.cust.c.type,
+            self.cust.c.open_date,
+            self.users.c.u,
+            self.users.c.name,
+            self.users.c.dept,
+            self.users.c.state,
+            self.balance,
+            self.month_avg,
+            self.season_avg,
+            self.year_avg
         ]). \
             select_from(self.source). \
-            group_by(self.account.c.inst)
+            group_by(self.acct.c.acct, self.cust.c.cust, self.users.c.u)
 
-    def save_to_excel(self, file, title=None, header=None):
-        header = header or (
-            "账号", "余额", "月均", "季均", "年均",
-        )
-        return super().save_to_excel(file, title=title, header=header)
+
+class SelectInstDep(_SelectDep):
+
+    HEADER = ("机构", "余额", "月均", "季均", "年均", )
+
+    def __init__(self, date, **kw):
+
+        super(SelectInstDep, self).__init__(date, **kw)
+
+        self.owner = db.table("dep_owner")
+
+        self.source = self.data.join(self.acct, self.data.c.acct == self.acct.c.acct). \
+            join(self.cust, self.cust.c.cust == self.acct.c.cust). \
+            outerjoin(self.owner, self.owner.c.acct == self.acct.c.acct). \
+            outerjoin(self.users, self.users.c.u == self.owner.c.u)
+
+        self.sql = sa.select([
+            self.acct.c.inst,
+            self.balance,
+            self.month_avg,
+            self.season_avg,
+            self.year_avg
+        ]). \
+            select_from(self.source). \
+            group_by(self.acct.c.inst)
 
 
 def combine_deposit(demand, fix):
@@ -313,321 +357,222 @@ def combine_deposit(demand, fix):
     return res
 
 
-def save_user_deposit(date, file, title=None):
-    res = combine_deposit(
-        SelectUserDeposit(date).product(DEMAND).exec(),
-        SelectUserDeposit(date).product(FIX).exec()
-    )
-
-    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "user.xlsx"))
+def save_dep_to_excel(sql, file, title=None, header=None):
+    book = xl.Workbook()
     sheet = book.active
+
     if title is not None:
         sheet.title = title
 
-    for row in res.values():
-        sheet.append(row)
+    if header is not None:
+        sheet.append(header)
+
+    for row in db.query(sql):
+        sheet.append(tuple(row))
 
     book.save(file)
 
 
-def save_customer_deposit(date, file, title=None):
-    res = combine_deposit(
-        SelectCustomerDeposit(date).product(DEMAND).exec(),
-        SelectCustomerDeposit(date).product(FIX).exec()
-    )
+def _save_dep_with_tmpl(dist, tmpl, rows, title=None):
 
-    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "customer.xlsx"))
+    book = xl.load_workbook(tmpl)
     sheet = book.active
+
     if title is not None:
         sheet.title = title
 
-    for row in res.values():
-        sheet.append(row)
+    for row in rows:
+        sheet.append(tuple(row))
 
-    book.save(file)
-
-
-def save_account_deposit(date, file, title=None):
-    sql = SelectAccountDeposit(date)
-
-    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "account.xlsx"))
-    sheet = book.active
-    if title is not None:
-        sheet.title = title
-
-    for row in sql.exec():
-        sheet.append(row.values())
-
-    book.save(file)
+    book.save(dist)
 
 
-def save_inst_deposit(date, file, title=None, inputed=NIL):
-    demand = SelectInstDeposit(date).product(DEMAND)
-    fix = SelectInstDeposit(date).product(FIX)
+def save_user_dep_to_excel(date, file, title=None):
 
-    if inputed == INPUTED:
-        demand.where(demand.user.c.user != None)
-        fix.where(fix.user.c.user != None)
-    elif inputed == UNINPUTED:
-        demand.where(demand.user.c.user == None)
-        fix.where(fix.user.c.user == None)
+    sel = SelectUserDep(date)
 
     res = combine_deposit(
-        demand.exec(),
-        fix.exec()
+        db.query(sel.demand()),
+        db.query(sel.fix())
     )
 
-    book = xl.load_workbook(os.path.join(config.TEMPLATE_DIR, "deposit", "inst.xlsx"))
-    sheet = book.active
-    if title is not None:
-        sheet.title = title
-
-    for row in res.values():
-        sheet.append(row)
-
-    book.save(file)
+    _save_dep_with_tmpl(
+        file,
+        os.path.join(config.TEMPLATE_DIR, "deposit", "user.xlsx"),
+        res.values(),
+        title=title
+    )
 
 
-class Insert(object):
+def save_cust_dep_to_excel(date, file, title=None):
 
-    def __init__(self, t):
-        super(Insert, self).__init__()
+    sel = SelectCustDep(date)
 
-        self.t = t
-        self.sql = sa_insert(self.t)
+    res = combine_deposit(
+        db.query(sel.demand()),
+        db.query(sel.fix())
+    )
 
-    def do_update(self):
-        set_ = {}
-        for c in self.t.c:
-            set_[c.name] = getattr(self.sql.excluded, c.name)
-
-        self.sql = self.sql.on_conflict_do_update(
-            index_elements=self.t.primary_key,
-            set_=set_
-        )
-        return self
-
-    def do_nothing(self):
-        self.sql = self.sql.on_conflict_do_nothing(
-            index_elements=self.t.primary_key
-        )
-        return self
-
-    def exec(self, *args, **kw):
-        return db.commit(self.sql, *args, **kw)
+    _save_dep_with_tmpl(
+        file,
+        os.path.join(config.TEMPLATE_DIR, "deposit", "customer.xlsx"),
+        res.values(),
+        title=title
+    )
 
 
-class InsertUser(Insert):
+def save_acct_dep_to_excel(date, file, title=None):
 
-    def __init__(self, name="user"):
-        t = db.table(name)
-        super(InsertUser, self).__init__(t)
+    sel = SelectAcctDep(date)
 
-    def from_excel(self, file, sheet=None):
-        wb = xl.load_workbook(file)
-        ws = wb.active if sheet is None else wb[sheet]
-        content = []
-        for row in ws.iter_rows(min_row=2):
-            content.append(
-                {
-                    "user": row[0].value,
-                    "password": row[1].value,
-                    "name": row[2].value,
-                    "dept": row[3].value,
-                    "state": row[4].value,
-                }
-            )
-        wb.close()
-        return self.exec(*content)
+    _save_dep_with_tmpl(
+        file,
+        os.path.join(config.TEMPLATE_DIR, "deposit", "account.xlsx"),
+        db.query(sel.sql),
+        title=title
+    )
 
 
-class InsertCustomer(Insert):
+def save_inst_dep_to_excel(date, file, title=None):
 
-    def __init__(self, name="customer"):
-        t = db.table(name)
-        super(InsertCustomer, self).__init__(t)
+    sel = SelectInstDep(date)
 
-    def from_excel(self, file, sheet=None):
-        wb = xl.load_workbook(file)
-        ws = wb.active if sheet is None else wb[sheet]
-        content = []
-        for row in ws.iter_rows(min_row=2):
-            content.append(
-                {
-                    "customer": row[4].value[-11:],
-                    "name": row[5].value,
-                    "type": row[9].value,
-                    "open_date": row[10].value,
-                }
-            )
-        wb.close()
-        return self.exec(*content)
+    res = combine_deposit(
+        db.query(sel.demand().where(sel.users.c.u == None)),
+        db.query(sel.fix().where(sel.users.c.u == None))
+    )
 
-    def from_txt(self, file, delimiter=","):
-        content = []
-        with open(file, encoding="utf8") as f:
-            lines = f.readlines()
-            if len(lines) <= 1:
-                return
-            for line in lines[1:]:
-                row = line.split(delimiter)
-                content.append({
-                    "customer": row[4].replace(" ", "")[-11:],
-                    "name": row[5].replace(" ", ""),
-                    "type": row[9].replace(" ", ""),
-                    "open_date": row[10].replace(" ", ""),
-                })
-
-        return self.exec(*content)
+    _save_dep_with_tmpl(
+        file,
+        os.path.join(config.TEMPLATE_DIR, "deposit", "inst.xlsx"),
+        res.values(),
+        title=title
+    )
 
 
-class InsertDepositAccount(Insert):
-
-    def __init__(self, name="deposit_account"):
-        t = db.table(name)
-        super(InsertDepositAccount, self).__init__(t)
-
-    def from_excel(self, file, sheet=None):
-        wb = xl.load_workbook(file)
-        ws = wb.active if sheet is None else wb[sheet]
-        content = []
-        for row in ws.iter_rows(min_row=2):
-            content.append(
-                {
-                    "account": row[3].value,
-                    "customer": row[0].value[-11:],
-                    "inst": row[1].value,
-                    "product": row[7].value,
-                    "open_date": row[9].value,
-                }
-            )
-        wb.close()
-        return self.exec(*content)
-
-    def from_txt(self, file, delimiter=","):
-        content = []
-        with open(file, encoding="utf8") as f:
-            lines = f.readlines()
-            for line in lines[1:]:
-                row = line.split(delimiter)
-                content.append({
-                    "account": row[3].replace(" ", ""),
-                    "customer": row[0].replace(" ", "")[-11:],
-                    "inst": row[1].replace(" ", ""),
-                    "product": row[7].replace(" ", ""),
-                    "open_date": row[9].replace(" ", ""),
-                })
-
-        return self.exec(*content)
+def insert(t):
+    return sa_insert(t)
 
 
-class InsertDepositData(Insert):
-
-    def __init__(self, name="deposit_data"):
-        t = db.table(name)
-        super(InsertDepositData, self).__init__(t)
-
-    def from_excel(self, file, sheet=None):
-        wb = xl.load_workbook(file)
-        ws = wb.active if sheet is None else wb[sheet]
-        content = []
-        for row in ws.iter_rows(min_row=2):
-            content.append(
-                {
-                    "account": row[3].value,
-                    "state": row[12].value,
-                    "balance": row[14].value,
-                    "month_acc": row[15].value,
-                    "season_acc": row[17].value,
-                    "year_acc": row[16].value,
-                    "date": row[18].value,
-                }
-            )
-        wb.close()
-        return self.exec(*content)
-
-    def from_txt(self, file, delimiter=","):
-        content = []
-        with open(file, encoding="utf8") as f:
-            lines = f.readlines()
-            for line in lines[1:]:
-                row = line.split(delimiter)
-                content.append({
-                    "account": row[3].replace(" ", ""),
-                    "state": row[12].replace(" ", ""),
-                    "balance": row[14].replace(" ", ""),
-                    "month_acc": row[15].replace(" ", ""),
-                    "season_acc": row[17].replace(" ", ""),
-                    "year_acc": row[16].replace(" ", ""),
-                    "date": row[18].replace(" ", ""),
-                })
-
-        return self.exec(*content)
+def insert_with_update(t):
+    stmt = sa_insert(t)
+    set_ = {}
+    for c in t.c:
+        set_[c.name] = getattr(stmt.excluded, c.name)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=stmt.t.primary_key,
+        set_=set_
+    )
+    return stmt
 
 
-class ImportDepositOwner(Insert):
-
-    def __init__(self, name="deposit_owner"):
-        t = db.table(name)
-        super(ImportDepositOwner, self).__init__(t)
-
-    def from_excel(self, file, sheet=None):
-        wb = xl.load_workbook(file)
-        ws = wb.active if sheet is None else wb[sheet]
-        content = []
-        for row in ws.iter_rows(min_row=2):
-            content.append(
-                {
-                    "customer": row[0].value[-11:],
-                    "user": row[1].value,
-                }
-            )
-        wb.close()
-        return self.exec(*content)
+def insert_with_nothing(t):
+    stmt = sa_insert(t)
+    stmt = stmt.on_conflict_do_nothing(
+        index_elements=t.primary_key
+    )
+    return stmt
 
 
-def import_all(dir_, with_update=False):
+def insert_users_from_txt(file, with_update=False, delimter=","):
+    pass
+
+
+def insert_cust_from_txt(file, with_update=False, delimiter=","):
+    content = []
+    with open(file, encoding="utf8") as f:
+        lines = f.readlines()
+        if len(lines) <= 1:
+            return
+        for line in lines[1:]:
+            row = line.split(delimiter)
+            content.append({
+                "cust": row[4].replace(" ", "")[-11:],
+                "name": row[5].replace(" ", ""),
+                "type": row[9].replace(" ", ""),
+                "open_date": row[10].replace(" ", ""),
+            })
+    t = db.t("cust")
+    if with_update:
+        stmt = insert_with_update(t)
+    else:
+        stmt = insert_with_nothing(t)
+    return db.commit(stmt, *content)
+
+
+def insert_dep_acct_from_txt(file, with_update=False, delimiter=","):
+    content = []
+    with open(file, encoding="utf8") as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            row = line.split(delimiter)
+            content.append({
+                "acct": row[3].replace(" ", ""),
+                "cust": row[0].replace(" ", "")[-11:],
+                "inst": row[1].replace(" ", ""),
+                "prod": row[7].replace(" ", ""),
+                "open_date": row[9].replace(" ", ""),
+            })
+    t = db.t("dep_acct")
+    if with_update:
+        stmt = insert_with_update(t)
+    else:
+        stmt = insert_with_nothing(t)
+    return db.commit(stmt, *content)
+
+
+def insert_dep_data_from_txt(date, file, delimiter=","):
+    content = []
+    with open(file, encoding="utf8") as f:
+        lines = f.readlines()
+        for line in lines[1:]:
+            row = line.split(delimiter)
+            content.append({
+                "acct": row[3].replace(" ", ""),
+                "balance": row[14].replace(" ", ""),
+                "month_acc": row[15].replace(" ", ""),
+                "season_acc": row[17].replace(" ", ""),
+                "year_acc": row[16].replace(" ", ""),
+                "date": row[18].replace("\n", ""),
+            })
+    t = create_dep_data_table("dep_data_" + date[0:4])
+    stmt = sa_insert(t)
+    return db.commit(stmt, *content)
+
+
+def import_all(dir_, date, with_update=False):
 
     files = os.listdir(dir_)
 
     for f in files:
         if f.startswith("CUS"):
-            insert = InsertCustomer()
-            if with_update is True:
-                insert.do_update()
-            else:
-                insert.do_nothing()
-            ret = insert.from_txt(os.path.join(dir_, f))
-            print("Insert Customer --- %s:" % f, " Result: ", ret)
-
+            ret = insert_cust_from_txt(os.path.join(dir_, f), with_update=with_update)
+            print("Insert Cust --- %s:" % f, " Result: ", ret)
         elif f.startswith("DEP"):
-            insert = InsertDepositAccount()
-            if with_update is True:
-                insert.do_update()
-            else:
-                insert.do_nothing()
-            ret = insert.from_txt(os.path.join(dir_, f))
-            print("Insert Deposit Account --- %s:" % f, " Result: ", ret)
-
-            insert = InsertDepositData()
-            ret = insert.from_txt(os.path.join(dir_, f))
-            print("Insert Deposit Data --- %s:" % f, " Result: ", ret)
+            ret = insert_dep_acct_from_txt(os.path.join(dir_, f), with_update=with_update)
+            print("Insert Dep Acct --- %s:" % f, " Result: ", ret)
+            ret = insert_dep_data_from_txt(date, os.path.join(dir_, f))
+            print("Insert Dep Data --- %s:" % f, " Result: ", ret)
 
 
-if __name__ == "__main__":
+def go():
 
     #im = ImportDepositOwner()
     #im.sql.do_nothing()
     #im.from_excel("D:/Desktop/repo/owner/OWNER.xlsx")
 
-    date = "20190305"
-    save_user_deposit(date, "D:/Desktop/USER-" + date + ".xlsx")
-    save_customer_deposit(date, "D:/Desktop/CUSTOMER-" + date + ".xlsx")
-    save_account_deposit(date, "D:/Desktop/ACCOUNT-" + date + ".xlsx")
-    save_inst_deposit(date, "D:/Desktop/INST-" + date + ".xlsx", inputed=UNINPUTED)
+    date = "20190323"
+    save_user_dep_to_excel(date, "D:/Desktop/USER-" + date + ".xlsx")
+    save_cust_dep_to_excel(date, "D:/Desktop/CUST-" + date + ".xlsx")
+    save_acct_dep_to_excel(date, "D:/Desktop/ACCT-" + date + ".xlsx")
+    save_inst_dep_to_excel(date, "D:/Desktop/INST-" + date + ".xlsx")
 
     #sel = SelectInstDeposit(date)
     #sel.product(FIX, 12, 24, 36, 60)
     #sel.where(sel.user.c.user == None)
     #sel.save_to_excel("D:/Desktop/INST.xlsx")
 
+
+if __name__ == "__main__":
+
+    go()

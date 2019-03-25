@@ -13,7 +13,7 @@ def job():
     os.makedirs(out, exist_ok=True)
 
     jm.download_all(date, out)
-    ims.import_all(out)
+    ims.import_all(out, date)
 
 
 if __name__ == "__main__":
